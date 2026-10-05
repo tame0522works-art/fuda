@@ -5,7 +5,7 @@ import ItemsPanel from './components/ItemsPanel'
 import * as db from './db'
 import {
   TABS, duplicateEl, moveLayer, newImage, newRect, newText, removeEl, round, starterDoc, updateEl, uid,
-  type Doc, type Tab,
+  type Doc, type ImageEl, type Tab,
 } from './doc'
 import type { Item } from './fields'
 import { commitFrom, initHistory, push, redo, replace, undo, type History } from './history'
@@ -114,21 +114,47 @@ export default function App() {
     select(id)
   }
 
-  const addImage = async (file: File) => {
+  /** 複数まとめてドロップされても1手で元に戻せるよう、全部読み込んでから1回だけ反映する */
+  const addImages = async (files: File[], center?: { x: number; y: number }) => {
     if (!doc) return
-    if (!file.type.startsWith('image/')) return setError('画像ファイルを選んでください')
-    if (file.size > MAX_IMAGE_BYTES) return setError('画像が大きすぎます（20MB まで）')
-    try {
-      const bitmap = await createImageBitmap(file)
-      const id = uid()
-      await db.putImage(id, file)
-      setImages((m) => new Map(m).set(id, bitmap))
-      const el = newImage(doc.page, id, bitmap.width / bitmap.height)
-      addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id)
-    } catch {
-      setError('この画像は読み込めませんでした')
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) return setError('画像ファイルを選んでください')
+    const problems: string[] = []
+    if (images.length < files.length) problems.push('画像以外のファイルは入れませんでした')
+    const added: ImageEl[] = []
+    const step = Math.min(doc.page.width, doc.page.height) * 0.04
+    for (const file of images) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        problems.push(`${file.name} は大きすぎます（20MB まで）`)
+        continue
+      }
+      try {
+        const bitmap = await createImageBitmap(file)
+        const id = uid()
+        await db.putImage(id, file)
+        setImages((m) => new Map(m).set(id, bitmap))
+        const at = center && { x: center.x + step * added.length, y: center.y + step * added.length }
+        added.push(newImage(doc.page, id, bitmap.width / bitmap.height, at))
+      } catch {
+        problems.push(`${file.name} は読み込めませんでした`)
+      }
     }
+    setError(problems.length ? problems.join(' ／ ') : null)
+    if (added.length) addAndSelect({ ...doc, elements: [...doc.elements, ...added] }, added[added.length - 1].id)
   }
+
+  // ページの外に画像を落としたとき、ブラウザがその画像を開いてアプリから離れてしまわないようにする
+  useEffect(() => {
+    const block = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    window.addEventListener('dragover', block)
+    window.addEventListener('drop', block)
+    return () => {
+      window.removeEventListener('dragover', block)
+      window.removeEventListener('drop', block)
+    }
+  }, [])
 
   const deleteSelected = useCallback(() => {
     if (!doc || !selectedId) return
@@ -259,9 +285,10 @@ export default function App() {
             onChange={(e) => {
               const f = e.target.files?.[0]
               e.target.value = ''
-              if (f) void addImage(f)
+              if (f) void addImages([f])
             }}
           />
+          <p className="tool-hint">ページへドラッグでも入れられます</p>
           {tab === 'card' && (
             <>
               <hr />
@@ -290,6 +317,7 @@ export default function App() {
           onEdit={setEditing}
           onDuplicate={duplicateSelected}
           onDelete={deleteSelected}
+          onDropImages={(files, at) => void addImages(files, at)}
         />
 
         <aside className="panel">

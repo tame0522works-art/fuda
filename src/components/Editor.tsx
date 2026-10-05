@@ -32,18 +32,23 @@ type Props = {
   onEdit: (editing: { id: string; selectAll: boolean } | null) => void
   onDuplicate: () => void
   onDelete: () => void
+  /** at はドロップした位置（用紙の単位） */
+  onDropImages: (files: File[], at: { x: number; y: number }) => void
 }
 
 const PAD = 32
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
 
-export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete }: Props) {
+export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onDropImages }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [area, setArea] = useState({ w: 0, h: 0 })
   const [guides, setGuides] = useState<Guide[]>([])
+  const [dropping, setDropping] = useState(false)
+  // 子要素の上を通るたびに dragenter / dragleave が交互に来るので、出入りの回数で判定する
+  const dragDepth = useRef(0)
   // 直接入力は何文字打っても「元に戻す」1回で入力前に戻るよう、始めた時点の状態を覚えておく
   const editBase = useRef<Doc | null>(null)
   const docRef = useRef(doc)
@@ -172,7 +177,35 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
   const overflow = selected?.kind === 'text' && textOverflows(selected, item)
 
   return (
-    <div className="stage" ref={wrapRef} onPointerDown={() => onSelect(null)}>
+    <div
+      className={dropping ? 'stage dropping' : 'stage'}
+      ref={wrapRef}
+      onPointerDown={() => onSelect(null)}
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        dragDepth.current++
+        setDropping(true)
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (dragDepth.current === 0) setDropping(false)
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        dragDepth.current = 0
+        setDropping(false)
+        const files = [...e.dataTransfer.files]
+        if (files.length === 0) return
+        const r = canvasRef.current!.getBoundingClientRect()
+        onDropImages(files, { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale })
+      }}
+    >
+      {dropping && <div className="drop-note">ここに画像をドロップ</div>}
       <div
         className="paper"
         style={{ width: cssW, height: cssH }}

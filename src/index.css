@@ -441,3 +441,27 @@ main {
   font-size: 12px;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
 }
+
+.tool-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+.stage.dropping {
+  outline: 3px dashed var(--accent);
+  outline-offset: -10px;
+}
+.drop-note {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  pointer-events: none;
+}

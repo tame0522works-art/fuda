@@ -1,6 +1,6 @@
-// 複製が「すぐ下に1行増える」位置に置かれ、ページからはみ出すときは上かずらした位置に逃げるかを確かめる
+// 要素を足す位置を確かめる: 複製は「すぐ下に1行増える」位置、画像はドロップした点を中心にしてページ内に収める
 import assert from 'node:assert/strict'
-import { duplicateEl, newText, type Doc } from '../src/doc.ts'
+import { duplicateEl, newImage, newText, type Doc } from '../src/doc.ts'
 
 const page = { width: 1080, height: 1350, unit: 'px' as const }
 const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elements: [{ ...newText(page, '新刊'), x: 120, y, w: 840, h }] })
@@ -30,4 +30,23 @@ const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elem
   assert.ok(copy.x > 120 && copy.y > 100)
 }
 
-console.log('check:duplicate OK')
+
+// 画像はドロップした点を中心に置く（横長 2:1 の画像。幅はページの6割 = 648）
+{
+  const img = newImage(page, 'p', 2, { x: 400, y: 500 })
+  assert.deepEqual([img.x, img.y, img.w, img.h], [76, 338, 648, 324])
+}
+
+// 端に落としても、ページの内側に収める
+{
+  const img = newImage(page, 'p', 2, { x: 1070, y: 5 })
+  assert.deepEqual([img.x, img.y], [1080 - 648, 0])
+}
+
+// 位置を渡さなければページの中央
+{
+  const img = newImage(page, 'p', 2)
+  assert.deepEqual([img.x + img.w / 2, img.y + img.h / 2], [540, 675])
+}
+
+console.log('check:doc OK')

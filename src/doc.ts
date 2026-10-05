@@ -98,17 +98,19 @@ export function newRect(page: Page): RectEl {
   }
 }
 
-export function newImage(page: Page, imageId: string, aspect: number): ImageEl {
+/** center を渡すとその点を中心に置く（ドロップした位置）。ページからはみ出す分は内側へ寄せる */
+export function newImage(page: Page, imageId: string, aspect: number, center?: { x: number; y: number }): ImageEl {
   let w = page.width * 0.6
   let h = w / aspect
   if (h > page.height * 0.6) {
     h = page.height * 0.6
     w = h * aspect
   }
-  return {
-    id: uid(), kind: 'image', imageId, fit: 'cover',
-    x: round(page, (page.width - w) / 2), y: round(page, (page.height - h) / 2), w: round(page, w), h: round(page, h),
-  }
+  const cx = center?.x ?? page.width / 2
+  const cy = center?.y ?? page.height / 2
+  const x = Math.min(Math.max(cx - w / 2, 0), page.width - w)
+  const y = Math.min(Math.max(cy - h / 2, 0), page.height - h)
+  return { id: uid(), kind: 'image', imageId, fit: 'cover', x: round(page, x), y: round(page, y), w: round(page, w), h: round(page, h) }
 }
 
 /** px は整数、mm は 0.1mm 刻みに丸める（ドラッグ中に数値が細かくなりすぎないように） */
