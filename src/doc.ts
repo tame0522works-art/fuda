@@ -9,8 +9,6 @@ export type Page = { width: number; height: number; unit: Unit }
 
 type Box = { id: string; x: number; y: number; w: number; h: number }
 
-export type FontKey = 'gothic' | 'mincho'
-
 export type TextEl = Box & {
   kind: 'text'
   text: string
@@ -19,7 +17,8 @@ export type TextEl = Box & {
   color: string
   weight: 400 | 700
   align: 'left' | 'center' | 'right'
-  font: FontKey
+  /** 書体のキー。fonts.ts の FONT_LIST か 'local:<名前>' */
+  font: string
   lineHeight: number
 }
 
@@ -48,11 +47,6 @@ export const TABS: { key: Tab; label: string; output: string }[] = [
   { key: 'pop', label: 'ポップ', output: '印刷用 PDF' },
   { key: 'card', label: '値札', output: 'A4 に面付けした PDF' },
 ]
-
-export const FONTS: Record<FontKey, { label: string; css: string }> = {
-  gothic: { label: 'ゴシック', css: '"Noto Sans JP", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif' },
-  mincho: { label: '明朝', css: '"Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif' },
-}
 
 export const PT_IN_MM = 25.4 / 72
 

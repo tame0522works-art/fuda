@@ -27,6 +27,13 @@ export default function App() {
   const [selected, setSelected] = useState<Record<Tab, string | null>>({ menu: null, pop: null, card: null })
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; selectAll: boolean } | null>(null)
+  // 同梱フォントは使う文字の分だけ後から届くので、届くたびに描き直す
+  const [fontTick, setFontTick] = useState(0)
+  useEffect(() => {
+    const onLoaded = () => setFontTick((t) => t + 1)
+    document.fonts.addEventListener('loadingdone', onLoaded)
+    return () => document.fonts.removeEventListener('loadingdone', onLoaded)
+  }, [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
@@ -319,11 +326,12 @@ export default function App() {
           onDelete={deleteSelected}
           onDropImages={(files, at) => void addImages(files, at)}
           onRecolor={(patch, key) => selectedId && commit(updateEl(doc, selectedId, patch), key)}
+          fontTick={fontTick}
         />
 
         <aside className="panel">
           {tab === 'card' && (
-            <ItemsPanel card={doc} items={items} images={images} previewId={previewId} onPreview={setPreviewId} onItems={updateItems} />
+            <ItemsPanel card={doc} items={items} images={images} previewId={previewId} onPreview={setPreviewId} onItems={updateItems} fontTick={fontTick} />
           )}
           <Inspector
             tab={tab}

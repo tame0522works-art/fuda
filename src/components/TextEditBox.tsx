@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
-import { FONTS, type TextEl } from '../doc'
+import type { TextEl } from '../doc'
+import { fontStack } from '../fonts'
 
 type Props = {
   el: TextEl
@@ -45,7 +46,7 @@ export default function TextEditBox({ el, scale, selectAll, onChange, onFinish }
         left: el.x * scale,
         top: el.y * scale,
         width: el.w * scale,
-        font: `${el.weight} ${el.size * scale}px ${FONTS[el.font].css}`,
+        font: `${el.weight} ${el.size * scale}px ${fontStack(el.font)}`,
         lineHeight: el.lineHeight,
         textAlign: el.align,
         color: el.color,

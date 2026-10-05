@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { FIELDS } from '../fields'
-import { FONTS, PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type FontKey, type Tab } from '../doc'
+import { PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
+import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, listLocalFonts, localFontKey } from '../fonts'
 
 type Props = {
   tab: Tab
@@ -18,6 +20,8 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
     (p) => (p.page.width === page.width && p.page.height === page.height) || (p.page.width === page.height && p.page.height === page.width),
   )
   const unit = page.unit
+  // PC の書体一覧は許可を取って読むものなので、ボタンを押したときだけ読み、この画面を開いている間だけ覚えておく
+  const [localFonts, setLocalFonts] = useState<string[]>([])
 
   return (
     <div className="inspector">
@@ -50,7 +54,7 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
       </section>
 
       {selected ? (
-        <ElementFields key={selected.id} doc={doc} el={selected} onDoc={onDoc} tab={tab} />
+        <ElementFields key={selected.id} doc={doc} el={selected} onDoc={onDoc} tab={tab} localFonts={localFonts} onLocalFonts={setLocalFonts} />
       ) : (
         <section>
           <p className="dim">ページ上の要素をクリックすると、ここで文字や色を変えられます。</p>
@@ -85,7 +89,9 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
   )
 }
 
-function ElementFields({ doc, el, onDoc, tab }: { doc: Doc; el: El; onDoc: Props['onDoc']; tab: Tab }) {
+type FieldsProps = { doc: Doc; el: El; onDoc: Props['onDoc']; tab: Tab; localFonts: string[]; onLocalFonts: (fonts: string[]) => void }
+
+function ElementFields({ doc, el, onDoc, tab, localFonts, onLocalFonts }: FieldsProps) {
   const set = (patch: Partial<El>, key: string) => onDoc(updateEl(doc, el.id, patch), `${el.id}:${key}`)
   const mm = doc.page.unit === 'mm'
 
@@ -96,6 +102,16 @@ function ElementFields({ doc, el, onDoc, tab }: { doc: Doc; el: El; onDoc: Props
           <h2>テキスト</h2>
           <textarea rows={4} value={el.text} onChange={(e) => set({ text: e.target.value }, 'text')} />
           <ColorField label="文字色" value={el.color} onChange={(color) => set({ color }, 'color')} />
+          <FontPicker
+            value={el.font}
+            localFonts={localFonts}
+            onLocalFonts={onLocalFonts}
+            onChange={(font) => {
+              const weights = fontWeights(font)
+              // 太字のない書体へ替えたら、太さもその書体にある太さへ合わせる
+              set({ font, weight: weights.includes(el.weight) ? el.weight : weights[0] }, 'font')
+            }}
+          />
           {tab === 'card' && (
             <div className="row wrap">
               <span className="dim">差し込み:</span>
@@ -118,18 +134,15 @@ function ElementFields({ doc, el, onDoc, tab }: { doc: Doc; el: El; onDoc: Props
             <Num label="行間" value={el.lineHeight} step={0.1} onChange={(v) => set({ lineHeight: Math.max(0.8, v) }, 'lineHeight')} />
           </div>
           <div className="row wrap">
+            {fontWeights(el.font).length > 1 && (
+              <Segment value={el.weight} options={[[400, '細'], [700, '太']]} onChange={(weight) => set({ weight }, 'weight')} />
+            )}
             <Segment
-              value={el.font}
-              options={Object.entries(FONTS).map(([k, f]) => [k as FontKey, f.label])}
-              onChange={(font) => set({ font }, 'font')}
+              value={el.align}
+              options={[['left', '左'], ['center', '中央'], ['right', '右']]}
+              onChange={(align) => set({ align }, 'align')}
             />
-            <Segment value={el.weight} options={[[400, '細'], [700, '太']]} onChange={(weight) => set({ weight }, 'weight')} />
           </div>
-          <Segment
-            value={el.align}
-            options={[['left', '左'], ['center', '中央'], ['right', '右']]}
-            onChange={(align) => set({ align }, 'align')}
-          />
         </section>
       )
     case 'rect':
@@ -199,6 +212,57 @@ function Segment<T extends string | number>({ value, options, onChange }: { valu
           {label}
         </button>
       ))}
+    </div>
+  )
+}
+
+function FontPicker({ value, onChange, localFonts, onLocalFonts }: {
+  value: string; onChange: (key: string) => void; localFonts: string[]; onLocalFonts: (fonts: string[]) => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const groups = [...new Set(FONT_LIST.map((f) => f.group))]
+  const localKeys = localFonts.map(localFontKey)
+  // 別の端末で PC の書体を選んだデザインを開いたときも、今の書体を一覧に出しておく
+  const orphan = value.startsWith(LOCAL_PREFIX) && !localKeys.includes(value)
+
+  const addLocal = async () => {
+    try {
+      const fonts = await listLocalFonts()
+      if (fonts.length === 0) setError('PC の書体を読めませんでした。ブラウザの許可を確認してください')
+      else {
+        setError(null)
+        onLocalFonts(fonts)
+      }
+    } catch {
+      setError('PC の書体を読む許可がありませんでした')
+    }
+  }
+
+  return (
+    <div className="field">
+      <span>書体</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {groups.map((g) => (
+          <optgroup key={g} label={g}>
+            {FONT_LIST.filter((f) => f.group === g).map((f) => (
+              <option key={f.key} value={f.key}>{f.label}</option>
+            ))}
+          </optgroup>
+        ))}
+        {(localKeys.length > 0 || orphan) && (
+          <optgroup label="この PC の書体">
+            {orphan && <option value={value}>{fontLabel(value)}</option>}
+            {localKeys.map((k) => (
+              <option key={k} value={k}>{fontLabel(k)}</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      <p className="font-sample" style={{ fontFamily: fontStack(value) }}>お品書き 新刊 700円 Aa</p>
+      {canListLocalFonts() && localFonts.length === 0 && (
+        <button type="button" className="chip" onClick={addLocal}>この PC の書体を一覧に追加</button>
+      )}
+      {error && <p className="msg error">{error}</p>}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 // 書き出しにかかる時間とファイルサイズを測る。README に載せる数値はここで出したものだけを使う
+import '../fonts-load'
 import { newImage, resizePage, starterDoc, type Doc } from '../doc'
 import type { Item } from '../fields'
 import { PRINT_DPI, exportCardsPdf, exportPng, exportPopPdf } from '../output'

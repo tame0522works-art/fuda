@@ -1,7 +1,8 @@
 import type { Doc } from './doc'
 import type { Item } from './fields'
 import { buildPdf, type PdfPage } from './pdf'
-import { drawDoc, drawSheet, type Images } from './render'
+import { ensureFonts } from './fonts'
+import { drawDoc, drawSheet, textSpecs, type Images } from './render'
 import { A4, layoutSheet, sheetCount } from './sheet'
 
 /** 家庭用プリンタにも同人誌の印刷所の推奨にも足りる解像度 */
@@ -25,6 +26,7 @@ function rgbOf(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): Ui
 }
 
 export async function exportPng(doc: Doc, images: Images): Promise<Blob> {
+  await ensureFonts(textSpecs(doc))
   const { canvas, ctx } = surface(doc.page.width, doc.page.height)
   drawDoc(ctx, doc, 1, images)
   return canvas.convertToBlob({ type: 'image/png' })
@@ -39,6 +41,7 @@ function printPage(widthMm: number, heightMm: number, draw: (ctx: OffscreenCanva
 }
 
 export async function exportPopPdf(doc: Doc, images: Images): Promise<Blob> {
+  await ensureFonts(textSpecs(doc))
   const page = printPage(doc.page.width, doc.page.height, (ctx, k) => drawDoc(ctx, doc, k, images))
   return new Blob([await buildPdf([page])], { type: 'application/pdf' })
 }
@@ -46,6 +49,8 @@ export async function exportPopPdf(doc: Doc, images: Images): Promise<Blob> {
 export async function exportCardsPdf(card: Doc, items: readonly Item[], images: Images): Promise<Blob> {
   const layout = layoutSheet(card.page)
   if (!layout) throw new Error('この大きさの値札は A4 に入りません')
+  // 書体の読み込みが終わる前に描くと、その品目だけ代わりの書体で刷られてしまう
+  await ensureFonts(textSpecs(card, items))
   const pages: PdfPage[] = []
   for (let s = 0; s < sheetCount(items.length, layout); s++) {
     pages.push(printPage(A4.width, A4.height, (ctx, k) => drawSheet(ctx, card, items, s, k, images)))

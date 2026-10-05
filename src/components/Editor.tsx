@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { removeEl, round, updateEl, type Doc, type El } from '../doc'
 import type { Item } from '../fields'
-import { drawDoc, textOverflows, type Images } from '../render'
+import { ensureFonts } from '../fonts'
+import { drawDoc, textOverflows, textSpecs, type Images } from '../render'
 import { snapMove, snapResize, type Guide } from '../snap'
 import TextEditBox from './TextEditBox'
 
@@ -34,6 +35,8 @@ type Props = {
   onDelete: () => void
   /** 選んでいる要素の色を変える。key は元に戻すを1手にまとめるための識別子 */
   onRecolor: (patch: { color: string } | { fill: string }, key: string) => void
+  /** 書体が届くたびに増える。描き直しのきっかけに使う */
+  fontTick: number
   /** at はドロップした位置（用紙の単位） */
   onDropImages: (files: File[], at: { x: number; y: number }) => void
 }
@@ -44,7 +47,7 @@ const colorOf = (el: El) => (el.kind === 'text' ? el.color : el.kind === 'rect' 
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
 
-export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onRecolor, onDropImages }: Props) {
+export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onRecolor, onDropImages, fontTick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -82,7 +85,9 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
     // 入力中の文字はキャンバスに描かず、重ねた入力欄だけに見せる（二重に見えないように）
     const shown = editing ? { ...doc, elements: doc.elements.filter((e) => e.id !== editing.id) } : doc
     drawDoc(canvas.getContext('2d')!, shown, scale * dpr, images, item)
-  }, [doc, images, item, scale, cssW, cssH, area.w, editing])
+    // まだ届いていない書体があれば読み込みを始める。届いたら fontTick が変わって描き直される
+    ensureFonts(textSpecs(doc, [item])).catch(() => {})
+  }, [doc, images, item, scale, cssW, cssH, area.w, editing, fontTick])
 
   const finishEdit = () => {
     const base = editBase.current

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { uid, type Doc } from '../doc'
 import type { Item } from '../fields'
-import { drawSheet, textOverflows, type Images } from '../render'
+import { ensureFonts } from '../fonts'
+import { drawSheet, textOverflows, textSpecs, type Images } from '../render'
 import { A4, layoutSheet, sheetCount } from '../sheet'
 import { itemsFromTsuriBackup } from '../tsuri'
 
@@ -12,9 +13,10 @@ type Props = {
   previewId: string | null
   onPreview: (id: string | null) => void
   onItems: (items: Item[]) => void
+  fontTick: number
 }
 
-export default function ItemsPanel({ card, items, images, previewId, onPreview, onItems }: Props) {
+export default function ItemsPanel({ card, items, images, previewId, onPreview, onItems, fontTick }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const layout = layoutSheet(card.page)
@@ -93,7 +95,7 @@ export default function ItemsPanel({ card, items, images, previewId, onPreview, 
           <p className="dim">
             1枚に {layout.cols}×{layout.rows} = {layout.perSheet} 面 ／ {sheetCount(items.length, layout)} 枚
           </p>
-          <SheetPreview card={card} items={items} images={images} />
+          <SheetPreview card={card} items={items} images={images} fontTick={fontTick} />
         </>
       ) : (
         <p className="msg error">この大きさの値札は A4 に入りません</p>
@@ -102,7 +104,7 @@ export default function ItemsPanel({ card, items, images, previewId, onPreview, 
   )
 }
 
-function SheetPreview({ card, items, images }: { card: Doc; items: Item[]; images: Images }) {
+function SheetPreview({ card, items, images, fontTick }: { card: Doc; items: Item[]; images: Images; fontTick: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const cssW = 220
   const cssH = (cssW * A4.height) / A4.width
@@ -112,6 +114,7 @@ function SheetPreview({ card, items, images }: { card: Doc; items: Item[]; image
     canvas.width = Math.round(cssW * dpr)
     canvas.height = Math.round(cssH * dpr)
     drawSheet(canvas.getContext('2d')!, card, items, 0, canvas.width / A4.width, images)
-  }, [card, items, images, cssH])
+    ensureFonts(textSpecs(card, items.length ? items : [undefined])).catch(() => {})
+  }, [card, items, images, cssH, fontTick])
   return <canvas ref={ref} className="sheet-preview" style={{ width: cssW, height: cssH }} aria-label="1枚目の面付けの見本" />
 }

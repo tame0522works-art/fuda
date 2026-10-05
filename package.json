@@ -18,6 +18,12 @@
     "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap && npm run check:doc"
   },
   "dependencies": {
+    "@fontsource/dela-gothic-one": "^5.3.0",
+    "@fontsource/dotgothic16": "^5.3.0",
+    "@fontsource/klee-one": "^5.3.0",
+    "@fontsource/rocknroll-one": "^5.3.0",
+    "@fontsource/yomogi": "^5.3.0",
+    "@fontsource/zen-maru-gothic": "^5.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

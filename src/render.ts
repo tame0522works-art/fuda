@@ -1,5 +1,6 @@
-import { FONTS, type Doc, type El, type TextEl } from './doc'
+import type { Doc, El, TextEl } from './doc'
 import { fillFields, type Item } from './fields'
+import { fontStack } from './fonts'
 import { A4, layoutSheet } from './sheet'
 import { wrapText } from './wrap'
 
@@ -12,7 +13,7 @@ export type Images = ReadonlyMap<string, ImageBitmap>
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
-export const fontCss = (el: TextEl, px: number) => `${el.weight} ${px}px ${FONTS[el.font].css}`
+export const fontCss = (el: TextEl, px: number) => `${el.weight} ${px}px ${fontStack(el.font)}`
 
 // 折り返しは描く倍率と無関係に、常に同じ基準サイズで測る。
 // 画面（小さく描く）と書き出し（大きく描く）でフォントのヒンティング差が出て、改行位置がずれるのを防ぐため
@@ -141,4 +142,11 @@ function drawCutMarks(
 /** 折り返した結果が枠の高さに収まらないか。値札では品名が長いものだけはみ出すので、品目ごとに確かめる */
 export function textOverflows(el: TextEl, item?: Item): boolean {
   return textLines(el, item).length * el.size * el.lineHeight > el.h + 1e-6
+}
+
+/** 書体の読み込みに渡す「どの書体・太さで、どの文字を描くか」。値札は品目ごとに差し込んだ後の文字で数える */
+export function textSpecs(doc: Doc, items: readonly (Item | undefined)[] = [undefined]) {
+  return doc.elements.flatMap((el) =>
+    el.kind === 'text' ? items.map((item) => ({ font: el.font, weight: el.weight, text: fillFields(el.text, item) })) : [],
+  )
 }
