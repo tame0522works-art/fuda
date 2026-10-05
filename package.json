@@ -13,7 +13,8 @@
     "check:sheet": "tsx tools/check-sheet.ts",
     "check:pdf": "tsx tools/check-pdf.ts",
     "check:tsuri": "tsx tools/check-tsuri.ts",
-    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri"
+    "check:snap": "tsx tools/check-snap.ts",
+    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap"
   },
   "dependencies": {
     "react": "^19.2.8",

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 
 import { round, type Doc, type El } from '../doc'
 import type { Item } from '../fields'
 import { drawDoc, textOverflows, type Images } from '../render'
+import { snapMove, snapResize, type Guide } from '../snap'
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -28,12 +29,15 @@ type Props = {
 }
 
 const PAD = 32
+/** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
+const SNAP_PX = 6
 
 export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [area, setArea] = useState({ w: 0, h: 0 })
+  const [guides, setGuides] = useState<Guide[]>([])
 
   useLayoutEffect(() => {
     const el = wrapRef.current!
@@ -101,7 +105,17 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
       }
     }
     const pg = doc.page
-    const box = { x: round(pg, x), y: round(pg, y), w: round(pg, w), h: round(pg, h) }
+    const others = d.base.elements.filter((el) => el.id !== d.id)
+    const threshold = SNAP_PX / scale
+    // Alt を押している間は吸着を切る（細かく置きたいとき用）
+    const snapped = e.altKey
+      ? { box: { x, y, w, h }, guides: [] }
+      : d.mode === 'move'
+        ? snapMove({ x, y, w, h }, others, pg, threshold)
+        : snapResize({ x, y, w, h }, d.mode, others, pg, threshold, min)
+    setGuides(snapped.guides)
+    const b = snapped.box
+    const box = { x: round(pg, b.x), y: round(pg, b.y), w: round(pg, b.w), h: round(pg, b.h) }
     onPreview({ ...d.base, elements: d.base.elements.map((el) => (el.id === d.id ? { ...el, ...box } : el)) })
   }
 
@@ -109,6 +123,7 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
+    setGuides([])
     onCommit(d.base)
   }
 
@@ -126,6 +141,13 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
         onPointerCancel={onUp}
       >
         <canvas ref={canvasRef} style={{ width: cssW, height: cssH }} />
+        {guides.map((g) => (
+          <div
+            key={`${g.axis}${g.at}`}
+            className={`guide ${g.axis}`}
+            style={g.axis === 'x' ? { left: g.at * scale } : { top: g.at * scale }}
+          />
+        ))}
         {selected && (
           <div
             className={overflow ? 'selection overflow' : 'selection'}

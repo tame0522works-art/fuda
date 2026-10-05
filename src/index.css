@@ -9,6 +9,7 @@
   --warn: #ff8f6b;
   --stage: #222a35;
   --select: #4ea1ff;
+  --guide: #ff3d9a;
   --radius: 8px;
 
   color-scheme: dark;
@@ -29,6 +30,7 @@
     --warn: #c2410c;
     --stage: #e4e8ee;
     --select: #1f6feb;
+    --guide: #e0137a;
     color-scheme: light;
   }
 }
@@ -382,4 +384,22 @@ main {
   .tabs {
     margin-left: 0;
   }
+}
+
+.guide {
+  position: absolute;
+  pointer-events: none;
+  background: var(--guide);
+}
+.guide.x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+}
+.guide.y {
+  left: 0;
+  right: 0;
+  height: 1px;
+  margin-top: -0.5px;
 }
