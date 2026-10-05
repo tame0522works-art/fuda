@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Editor from './components/Editor'
 import Inspector from './components/Inspector'
 import ItemsPanel from './components/ItemsPanel'
-import PngPreview, { type PngExport } from './components/PngPreview'
+import ExportPreview, { releasePreview, type ExportPreviewData } from './components/ExportPreview'
 import * as db from './db'
 import {
   TABS, moveLayer, newImage, newRect, newText, starterDoc, uid,
@@ -41,7 +41,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [pngPreview, setPngPreview] = useState<PngExport | null>(null)
+  const [preview, setPreview] = useState<ExportPreviewData | null>(null)
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const backupInput = useRef<HTMLInputElement>(null)
@@ -194,7 +194,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 確認画面が開いている間は、裏のページを操作しない
-      if (isTyping(e.target) || !docs || pngPreview) return
+      if (isTyping(e.target) || !docs || preview) return
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -247,15 +247,19 @@ export default function App() {
       // 書き出し中に表示が固まって見えないよう、ボタンの表示を先に描かせてから重い処理に入る
       await new Promise((r) => setTimeout(r, 30))
       const stamp = fileStamp()
+      // 保存する前に確認画面を出す。確認したものをそのまま保存するので、ここで作ったファイルを持っておく
       if (tab === 'menu') {
-        // PNG は保存する前に確認画面を出す。確認した画像をそのまま保存するので、ここで作ったものを持っておく
         const blob = await exportPng(docs.menu.present, images)
-        setPngPreview({ blob, name: `oshinagaki-${stamp}.png`, bitmap: await createImageBitmap(blob) })
+        setPreview({ kind: 'png', blob, name: `oshinagaki-${stamp}.png`, bitmap: await createImageBitmap(blob) })
       }
-      if (tab === 'pop') download(await exportPopPdf(docs.pop.present, images), `pop-${stamp}.pdf`)
+      if (tab === 'pop') {
+        const pdf = await exportPopPdf(docs.pop.present, images, { preview: true })
+        setPreview({ kind: 'pdf', ...pdf, name: `pop-${stamp}.pdf` })
+      }
       if (tab === 'card') {
         if (items.length === 0) throw new Error('値札にする品目がありません。右の「品目」から追加してください')
-        download(await exportCardsPdf(docs.card.present, items, images), `nefuda-${stamp}.pdf`)
+        const pdf = await exportCardsPdf(docs.card.present, items, images, { preview: true })
+        setPreview({ kind: 'pdf', ...pdf, name: `nefuda-${stamp}.pdf` })
       }
     } catch (e) {
       setError((e as Error).message || '書き出しに失敗しました')
@@ -347,15 +351,19 @@ export default function App() {
         </div>
       )}
 
-      {pngPreview && (
-        <PngPreview
-          png={pngPreview}
+      {preview && (
+        <ExportPreview
+          data={preview}
           onSave={() => {
-            download(pngPreview.blob, pngPreview.name)
-            setPngPreview(null)
-            setNotice(`${pngPreview.name} を保存しました`)
+            download(preview.blob, preview.name)
+            releasePreview(preview)
+            setPreview(null)
+            setNotice(`${preview.name} を保存しました`)
           }}
-          onClose={() => setPngPreview(null)}
+          onClose={() => {
+            releasePreview(preview)
+            setPreview(null)
+          }}
         />
       )}
 

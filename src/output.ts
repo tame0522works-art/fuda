@@ -35,11 +35,21 @@ export async function exportPng(doc: Doc, images: Images): Promise<Blob> {
 /** 写真を印刷に使うときの JPEG の品質。300dpi で刷ると、これ以上上げても見た目の差は出にくい */
 const PRINT_JPEG_QUALITY = 0.92
 
+/** 確認画面に出すページ画像の幅（px）。300dpi の原寸を全ページ持つとメモリを使いすぎるので縮める */
+const PREVIEW_WIDTH_PX = 1000
+
+/** 確認画面に出す1ページ。PDF に埋め込むのと同じ画像（JPEG にしたページは圧縮後のもの）を縮めたもの */
+export type PreviewPage = { bitmap: ImageBitmap; widthMm: number; heightMm: number; encoding: 'lossless' | 'jpeg' }
+
+export type PdfExport = { blob: Blob; pages: PreviewPage[] }
+
+type PrintOptions = { preview?: boolean }
+
 /** hasPhoto のページは JPEG も作って比べる（pdf.ts の chooseImage） */
 async function printPage(
-  widthMm: number, heightMm: number, hasPhoto: boolean,
+  widthMm: number, heightMm: number, hasPhoto: boolean, opts: PrintOptions,
   draw: (ctx: OffscreenCanvasRenderingContext2D, k: number) => void,
-): Promise<PdfPage> {
+): Promise<{ page: PdfPage; preview?: PreviewPage }> {
   const pxWidth = Math.round(widthMm * PX_PER_MM)
   const pxHeight = Math.round(heightMm * PX_PER_MM)
   const { canvas, ctx } = surface(pxWidth, pxHeight)
@@ -53,27 +63,41 @@ async function printPage(
           .then(async (blob): Promise<PdfImage> => ({ filter: 'DCTDecode', data: new Uint8Array(await blob.arrayBuffer()), pxWidth, pxHeight }))
       : undefined,
   ])
-  return { widthMm, heightMm, image: chooseImage(flate, jpeg) }
+  const image = chooseImage(flate, jpeg)
+  const page = { widthMm, heightMm, image }
+  if (!opts.preview) return { page }
+  const resize = { resizeWidth: PREVIEW_WIDTH_PX, resizeQuality: 'high' } as const
+  const jpegChosen = image.filter === 'DCTDecode'
+  const bitmap = jpegChosen
+    ? await createImageBitmap(new Blob([image.data as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }), resize)
+    : await createImageBitmap(canvas, resize)
+  return { page, preview: { bitmap, widthMm, heightMm, encoding: jpegChosen ? 'jpeg' : 'lossless' } }
+}
+
+async function toPdfExport(printed: { page: PdfPage; preview?: PreviewPage }[]): Promise<PdfExport> {
+  return {
+    blob: new Blob([await buildPdf(printed.map((p) => p.page))], { type: 'application/pdf' }),
+    pages: printed.flatMap((p) => (p.preview ? [p.preview] : [])),
+  }
 }
 
 const hasPhoto = (doc: Doc) => doc.elements.some((e) => e.kind === 'image')
 
-export async function exportPopPdf(doc: Doc, images: Images): Promise<Blob> {
+export async function exportPopPdf(doc: Doc, images: Images, opts: PrintOptions = {}): Promise<PdfExport> {
   await ensureFonts(textSpecs(doc))
-  const page = await printPage(doc.page.width, doc.page.height, hasPhoto(doc), (ctx, k) => drawDoc(ctx, doc, k, images))
-  return new Blob([await buildPdf([page])], { type: 'application/pdf' })
+  return toPdfExport([await printPage(doc.page.width, doc.page.height, hasPhoto(doc), opts, (ctx, k) => drawDoc(ctx, doc, k, images))])
 }
 
-export async function exportCardsPdf(card: Doc, items: readonly Item[], images: Images): Promise<Blob> {
+export async function exportCardsPdf(card: Doc, items: readonly Item[], images: Images, opts: PrintOptions = {}): Promise<PdfExport> {
   const layout = layoutSheet(card.page)
   if (!layout) throw new Error('この大きさの値札は A4 に入りません')
   // 書体の読み込みが終わる前に描くと、その品目だけ代わりの書体で刷られてしまう
   await ensureFonts(textSpecs(card, items))
-  const pages: PdfPage[] = []
+  const printed = []
   for (let s = 0; s < sheetCount(items.length, layout); s++) {
-    pages.push(await printPage(A4.width, A4.height, hasPhoto(card), (ctx, k) => drawSheet(ctx, card, items, s, k, images)))
+    printed.push(await printPage(A4.width, A4.height, hasPhoto(card), opts, (ctx, k) => drawSheet(ctx, card, items, s, k, images)))
   }
-  return new Blob([await buildPdf(pages)], { type: 'application/pdf' })
+  return toPdfExport(printed)
 }
 
 export function download(blob: Blob, name: string) {

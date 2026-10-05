@@ -55,10 +55,10 @@ async function run(photo: File | undefined) {
   }
 
   await step('お品書き（見本）', 'PNG 1080×1350', () => exportPng(menu, none))
-  await step('ポップ A4（見本）', `PDF ${PRINT_DPI}dpi 1ページ`, () => exportPopPdf(popA4, none))
-  await step('ポップ A5（見本を縮小）', `PDF ${PRINT_DPI}dpi 1ページ`, () => exportPopPdf(popA5, none))
-  await step('値札 名刺 10品目', 'PDF A4 1枚', () => exportCardsPdf(card, itemsOf(10), none))
-  await step('値札 名刺 50品目', 'PDF A4 5枚', () => exportCardsPdf(card, itemsOf(50), none))
+  await step('ポップ A4（見本）', `PDF ${PRINT_DPI}dpi 1ページ`, async () => (await exportPopPdf(popA4, none)).blob)
+  await step('ポップ A5（見本を縮小）', `PDF ${PRINT_DPI}dpi 1ページ`, async () => (await exportPopPdf(popA5, none)).blob)
+  await step('値札 名刺 10品目', 'PDF A4 1枚', async () => (await exportCardsPdf(card, itemsOf(10), none)).blob)
+  await step('値札 名刺 50品目', 'PDF A4 5枚', async () => (await exportCardsPdf(card, itemsOf(50), none)).blob)
   notes.push(`参考: ポップ A4（見本）を JPEG（品質0.92）にした場合 ${kb(await jpegSize(popA4, none))}`)
 
   if (photo) {
@@ -66,7 +66,7 @@ async function run(photo: File | undefined) {
     const images: Images = new Map([['photo', bitmap]])
     const bg = { ...newImage(popA4.page, 'photo', bitmap.width / bitmap.height), x: 0, y: 0, w: popA4.page.width, h: popA4.page.height }
     const withPhoto: Doc = { ...popA4, elements: [bg, ...popA4.elements] }
-    await step(`ポップ A4（写真 ${bitmap.width}×${bitmap.height} を全面）`, `PDF ${PRINT_DPI}dpi 1ページ`, () => exportPopPdf(withPhoto, images))
+    await step(`ポップ A4（写真 ${bitmap.width}×${bitmap.height} を全面）`, `PDF ${PRINT_DPI}dpi 1ページ`, async () => (await exportPopPdf(withPhoto, images)).blob)
     notes.push(`参考: 写真を全面に敷いたポップ A4 を JPEG（品質0.92）にした場合 ${kb(await jpegSize(withPhoto, images))}`)
   }
 

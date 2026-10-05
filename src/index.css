@@ -543,7 +543,7 @@ main {
   font-size: 12px;
 }
 
-.png-preview {
+.export-preview {
   width: min(960px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   padding: 0;
@@ -554,14 +554,14 @@ main {
   display: flex;
   flex-direction: column;
 }
-.png-preview:not([open]) {
+.export-preview:not([open]) {
   display: none;
 }
-.png-preview::backdrop {
+.export-preview::backdrop {
   background: rgb(0 0 0 / 0.5);
 }
-.png-preview header,
-.png-preview footer {
+.export-preview header,
+.export-preview footer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -569,34 +569,44 @@ main {
   background: none;
   border: none;
 }
-.png-preview header h2 {
+.export-preview header h2 {
   margin: 0;
   font-size: 14px;
   color: var(--ink);
 }
-.png-preview footer {
+.export-preview footer {
   justify-content: flex-end;
   border-top: 1px solid var(--panel-edge);
 }
-.png-preview > p {
+.export-preview > p {
   margin: 0;
   padding: 0 16px 8px;
 }
-.png-preview-view {
+.export-preview-view {
   flex: 1;
   min-height: 0;
   overflow: auto;
   background: var(--stage);
   display: grid;
-  place-items: center;
+  /* 実寸表示で横にはみ出したとき、左側までスクロールで届くように safe を付ける */
+  place-items: safe center;
+  gap: 16px;
   padding: 16px;
 }
-.png-preview-view.fit canvas {
+.export-preview-view.fit canvas {
   max-width: 100%;
   max-height: calc(100vh - 200px);
   object-fit: contain;
 }
-.png-preview-view canvas {
+.export-preview-view canvas {
   display: block;
   box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+}
+
+.export-preview-view figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
