@@ -542,3 +542,61 @@ main {
   padding: 4px 6px;
   font-size: 12px;
 }
+
+.png-preview {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+}
+.png-preview:not([open]) {
+  display: none;
+}
+.png-preview::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+.png-preview header,
+.png-preview footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+}
+.png-preview header h2 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.png-preview footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--panel-edge);
+}
+.png-preview > p {
+  margin: 0;
+  padding: 0 16px 8px;
+}
+.png-preview-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--stage);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.png-preview-view.fit canvas {
+  max-width: 100%;
+  max-height: calc(100vh - 200px);
+  object-fit: contain;
+}
+.png-preview-view canvas {
+  display: block;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+}
