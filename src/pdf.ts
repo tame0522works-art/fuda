@@ -1,17 +1,14 @@
 /**
  * 1ページに1枚の画像を全面に貼っただけの PDF を書き出す。
  * 必要なのはこれだけなので、PDF ライブラリは使わず仕様の最小限を自前で組む。
- * 画像は JPEG ではなく可逆圧縮（FlateDecode）で埋め込み、文字の輪郭ににじみを出さない。
+ * 画像は2通りの形で埋め込める:
+ * - FlateDecode … 可逆圧縮した RGB。文字と図形だけのページは JPEG より小さく、文字の輪郭もにじまない
+ * - DCTDecode   … JPEG をそのまま。写真を含むページは可逆圧縮の数倍小さくなる
  */
 
-export type PdfPage = {
-  widthMm: number
-  heightMm: number
-  /** 左上から右へ、行ごとに下へ並んだ RGB 各8bit */
-  rgb: Uint8Array<ArrayBuffer>
-  pxWidth: number
-  pxHeight: number
-}
+export type PdfImage = { filter: 'FlateDecode' | 'DCTDecode'; data: Uint8Array; pxWidth: number; pxHeight: number }
+
+export type PdfPage = { widthMm: number; heightMm: number; image: PdfImage }
 
 const mmToPt = (mm: number) => (mm * 72) / 25.4
 
@@ -19,6 +16,11 @@ export async function deflate(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array
   // CompressionStream の 'deflate' は zlib 形式で、PDF の FlateDecode が期待する形式と一致する
   const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('deflate'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+/** 左上から右へ、行ごとに下へ並んだ RGB 各8bit を可逆圧縮して埋め込める形にする */
+export async function flateImage(rgb: Uint8Array<ArrayBuffer>, pxWidth: number, pxHeight: number): Promise<PdfImage> {
+  return { filter: 'FlateDecode', data: await deflate(rgb), pxWidth, pxHeight }
 }
 
 export async function buildPdf(pages: readonly PdfPage[]): Promise<Uint8Array<ArrayBuffer>> {
@@ -54,11 +56,11 @@ export async function buildPdf(pages: readonly PdfPage[]): Promise<Uint8Array<Ar
     obj(n, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 ${n + 2} 0 R >> >> /Contents ${n + 1} 0 R >>`)
     const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`
     obj(n + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`)
-    const image = await deflate(p.rgb)
+    const img = p.image
     obj(
       n + 2,
-      `<< /Type /XObject /Subtype /Image /Width ${p.pxWidth} /Height ${p.pxHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${image.length} >>\nstream\n`,
-      image,
+      `<< /Type /XObject /Subtype /Image /Width ${img.pxWidth} /Height ${img.pxHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${img.filter} /Length ${img.data.length} >>\nstream\n`,
+      img.data,
       '\nendstream',
     )
   }
@@ -76,4 +78,15 @@ export async function buildPdf(pages: readonly PdfPage[]): Promise<Uint8Array<Ar
     at += c.length
   }
   return out
+}
+
+/**
+ * 写真を含むページだけ JPEG と比べ、可逆圧縮が JPEG の2倍を超えるときだけ JPEG にする。
+ * 写真全面の A4 で可逆 7MB 前後・JPEG 1MB 弱と約8倍の差が出たため（README の実測）。
+ * 文字と図形だけのページは可逆のほうが小さいので、そのまま可逆を使う。
+ */
+export const JPEG_SWITCH_RATIO = 2
+
+export function chooseImage(flate: PdfImage, jpeg: PdfImage | undefined): PdfImage {
+  return jpeg && flate.data.length > jpeg.data.length * JPEG_SWITCH_RATIO ? jpeg : flate
 }
