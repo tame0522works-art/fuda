@@ -512,3 +512,33 @@ main {
   background: color-mix(in srgb, var(--ok) 18%, var(--panel));
   border-bottom-color: var(--ok);
 }
+
+.selection.member {
+  outline-width: 1px;
+  opacity: 0.7;
+}
+.selection.group {
+  outline-style: dashed;
+}
+.quick-count {
+  align-self: center;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-shadow: 0 0 4px var(--panel);
+}
+.marquee {
+  position: absolute;
+  border: 1px solid var(--select);
+  background: color-mix(in srgb, var(--select) 12%, transparent);
+  pointer-events: none;
+}
+.align-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.align-grid button {
+  padding: 4px 6px;
+  font-size: 12px;
+}

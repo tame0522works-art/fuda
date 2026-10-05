@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FIELDS } from '../fields'
 import { PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
+import type { Align } from '../group'
 import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, listLocalFonts, localFontKey } from '../fonts'
 
 type Props = {
@@ -12,9 +13,13 @@ type Props = {
   onDelete: () => void
   onDuplicate: () => void
   onLayer: (dir: 1 | -1) => void
+  /** 選んでいる要素の数。2つ以上のときは個別の設定の代わりに揃え・等間隔を出す */
+  selectionCount: number
+  onAlign: (to: Align) => void
+  onDistribute: (axis: 'x' | 'y') => void
 }
 
-export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDuplicate, onLayer }: Props) {
+export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDuplicate, onLayer, selectionCount, onAlign, onDistribute }: Props) {
   const { page } = doc
   const presetIndex = PRESETS[tab].findIndex(
     (p) => (p.page.width === page.width && p.page.height === page.height) || (p.page.width === page.height && p.page.height === page.width),
@@ -53,18 +58,39 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
         <ColorField label="背景色" value={doc.background} onChange={(v) => onDoc({ ...doc, background: v }, 'background')} />
       </section>
 
-      {selected ? (
+      {selectionCount > 1 ? (
+        <section>
+          <h2>{selectionCount} 個を選択中</h2>
+          <AlignButtons onAlign={onAlign} />
+          <div className="row wrap">
+            <button type="button" disabled={selectionCount < 3} onClick={() => onDistribute('y')} title="上下の端の要素は動かさず、あいだの間隔をそろえる">
+              上下に等間隔
+            </button>
+            <button type="button" disabled={selectionCount < 3} onClick={() => onDistribute('x')} title="左右の端の要素は動かさず、あいだの間隔をそろえる">
+              左右に等間隔
+            </button>
+          </div>
+          <div className="row wrap">
+            <button type="button" onClick={onDuplicate}>まとめて複製</button>
+            <button type="button" className="danger" onClick={onDelete}>まとめて削除</button>
+          </div>
+          <p className="dim">Shift を押しながらクリックで追加・解除、何もない所からドラッグで囲んで選べます。</p>
+        </section>
+      ) : selected ? (
         <ElementFields key={selected.id} doc={doc} el={selected} onDoc={onDoc} tab={tab} localFonts={localFonts} onLocalFonts={setLocalFonts} />
       ) : (
         <section>
           <p className="dim">ページ上の要素をクリックすると、ここで文字や色を変えられます。</p>
           <p className="dim">行を増やすときは、近い行を選んで「複製」を押すと、すぐ下に同じ書式の行ができます。</p>
+          <p className="dim">まとめて動かすときは、何もない所からドラッグして囲むか、Shift を押しながらクリックします。</p>
         </section>
       )}
 
       {selected && (
         <section>
           <h2>配置</h2>
+          <span className="dim">ページに揃える</span>
+          <AlignButtons onAlign={onAlign} />
           <div className="row wrap">
             <button type="button" onClick={() => onLayer(1)}>手前へ</button>
             <button type="button" onClick={() => onLayer(-1)}>奥へ</button>
@@ -263,6 +289,25 @@ function FontPicker({ value, onChange, localFonts, onLocalFonts }: {
         <button type="button" className="chip" onClick={addLocal}>この PC の書体を一覧に追加</button>
       )}
       {error && <p className="msg error">{error}</p>}
+    </div>
+  )
+}
+
+const ALIGNS: [Align, string, string][] = [
+  ['left', '左', '左端をそろえる'],
+  ['hcenter', '左右中央', '左右の中央をそろえる'],
+  ['right', '右', '右端をそろえる'],
+  ['top', '上', '上端をそろえる'],
+  ['vcenter', '上下中央', '上下の中央をそろえる'],
+  ['bottom', '下', '下端をそろえる'],
+]
+
+function AlignButtons({ onAlign }: { onAlign: (to: Align) => void }) {
+  return (
+    <div className="align-grid">
+      {ALIGNS.map(([to, label, title]) => (
+        <button key={to} type="button" title={title} onClick={() => onAlign(to)}>{label}</button>
+      ))}
     </div>
   )
 }

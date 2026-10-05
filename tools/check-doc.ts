@@ -1,6 +1,7 @@
 // 要素を足す位置を確かめる: 複製は「すぐ下に1行増える」位置、画像はドロップした点を中心にしてページ内に収める
 import assert from 'node:assert/strict'
-import { duplicateEl, newImage, newText, type Doc } from '../src/doc.ts'
+import { newImage, newText, type Doc } from '../src/doc.ts'
+import { duplicateEls } from '../src/group.ts'
 
 const page = { width: 1080, height: 1350, unit: 'px' as const }
 const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elements: [{ ...newText(page, '新刊'), x: 120, y, w: 840, h }] })
@@ -8,8 +9,8 @@ const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elem
 // 下に入るなら、すぐ下に同じ x・同じ大きさで置く
 {
   const doc = docWith(400, 200)
-  const r = duplicateEl(doc, doc.elements[0].id)
-  const copy = r.doc.elements.find((e) => e.id === r.id)!
+  const r = duplicateEls(doc, [doc.elements[0].id])
+  const copy = r.doc.elements.find((e) => e.id === r.ids[0])!
   assert.deepEqual([copy.x, copy.y, copy.w, copy.h], [120, 600, 840, 200])
   assert.notEqual(copy.id, doc.elements[0].id)
   assert.equal(r.doc.elements.indexOf(copy), 1, '元の要素の直後（1つ手前）に入る')
@@ -18,15 +19,15 @@ const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elem
 // 下に入らなければすぐ上
 {
   const doc = docWith(1100, 200)
-  const r = duplicateEl(doc, doc.elements[0].id)
-  assert.equal(r.doc.elements.find((e) => e.id === r.id)!.y, 900)
+  const r = duplicateEls(doc, [doc.elements[0].id])
+  assert.equal(r.doc.elements.find((e) => e.id === r.ids[0])!.y, 900)
 }
 
 // 上下どちらにも入らない大きな要素は、少しずらして重ねる
 {
   const doc = docWith(100, 1000)
-  const r = duplicateEl(doc, doc.elements[0].id)
-  const copy = r.doc.elements.find((e) => e.id === r.id)!
+  const r = duplicateEls(doc, [doc.elements[0].id])
+  const copy = r.doc.elements.find((e) => e.id === r.ids[0])!
   assert.ok(copy.x > 120 && copy.y > 100)
 }
 

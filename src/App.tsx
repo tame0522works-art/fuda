@@ -4,12 +4,13 @@ import Inspector from './components/Inspector'
 import ItemsPanel from './components/ItemsPanel'
 import * as db from './db'
 import {
-  TABS, duplicateEl, moveLayer, newImage, newRect, newText, removeEl, round, starterDoc, updateEl, uid,
+  TABS, moveLayer, newImage, newRect, newText, starterDoc, uid,
   type Doc, type ImageEl, type Tab,
 } from './doc'
 import type { Item } from './fields'
 import { commitFrom, initHistory, push, redo, replace, undo, type History } from './history'
 import { isBackupError, parseBackup, toBackup } from './backup'
+import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 
 type Docs = Record<Tab, History<Doc>>
@@ -25,7 +26,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('menu')
   const [items, setItems] = useState<Item[]>([])
   const [images, setImages] = useState<ReadonlyMap<string, ImageBitmap>>(new Map())
-  const [selected, setSelected] = useState<Record<Tab, string | null>>({ menu: null, pop: null, card: null })
+  const [selected, setSelected] = useState<Record<Tab, string[]>>({ menu: [], pop: [], card: [] })
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; selectAll: boolean } | null>(null)
   // 同梱フォントは使う文字の分だけ後から届くので、届くたびに描き直す
@@ -50,7 +51,7 @@ export default function App() {
       card: saved.docs.card ?? starterDoc('card'),
     }
     setDocs({ menu: initHistory(loaded.menu), pop: initHistory(loaded.pop), card: initHistory(loaded.card) })
-    setSelected({ menu: null, pop: null, card: null })
+    setSelected({ menu: [], pop: [], card: [] })
     setEditing(null)
     // 削除した画像は元に戻せるよう保存したままにしているので、開き直した時点で使われていないものを片付ける
     const used = new Set(Object.values(loaded).flatMap((d) => d.elements.flatMap((e) => (e.kind === 'image' ? [e.imageId] : []))))
@@ -120,15 +121,16 @@ export default function App() {
     [edit],
   )
 
-  const select = (id: string | null) => setSelected((s) => ({ ...s, [tab]: id }))
+  const select = (ids: string[]) => setSelected((s) => ({ ...s, [tab]: ids }))
 
   const doc = docs?.[tab].present
-  const selectedId = selected[tab]
-  const selectedEl = doc?.elements.find((e) => e.id === selectedId)
+  // 元に戻すで消えた要素が選択に残らないよう、今あるものだけにしぼる
+  const selectedIds = doc ? selected[tab].filter((id) => doc.elements.some((e) => e.id === id)) : []
+  const selectedEl = selectedIds.length === 1 ? doc?.elements.find((e) => e.id === selectedIds[0]) : undefined
 
-  const addAndSelect = (next: Doc, id: string) => {
+  const addAndSelect = (next: Doc, ids: string[]) => {
     commit(next)
-    select(id)
+    select(ids)
   }
 
   /** 複数まとめてドロップされても1手で元に戻せるよう、全部読み込んでから1回だけ反映する */
@@ -157,7 +159,7 @@ export default function App() {
       }
     }
     setError(problems.length ? problems.join(' ／ ') : null)
-    if (added.length) addAndSelect({ ...doc, elements: [...doc.elements, ...added] }, added[added.length - 1].id)
+    if (added.length) addAndSelect({ ...doc, elements: [...doc.elements, ...added] }, added.map((e) => e.id))
   }
 
   // ページの外に画像を落としたとき、ブラウザがその画像を開いてアプリから離れてしまわないようにする
@@ -173,18 +175,18 @@ export default function App() {
     }
   }, [])
 
-  const deleteSelected = useCallback(() => {
-    if (!doc || !selectedId) return
-    commit(removeEl(doc, selectedId))
-    setSelected((s) => ({ ...s, [tab]: null }))
-  }, [doc, selectedId, commit, tab])
+  const deleteSelected = () => {
+    if (!doc || selectedIds.length === 0) return
+    commit(removeEls(doc, selectedIds))
+    select([])
+  }
 
-  const duplicateSelected = useCallback(() => {
-    if (!doc || !selectedId) return
-    const r = duplicateEl(doc, selectedId)
+  const duplicateSelected = () => {
+    if (!doc || selectedIds.length === 0) return
+    const r = duplicateEls(doc, selectedIds)
     commit(r.doc)
-    setSelected((s) => ({ ...s, [tab]: r.id }))
-  }, [doc, selectedId, commit, tab])
+    select(r.ids)
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -196,7 +198,12 @@ export default function App() {
       } else if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault()
         edit(redo)
-      } else if (!doc || !selectedId) {
+      } else if (!doc) {
+        return
+      } else if (mod && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        select(doc.elements.map((x) => x.id))
+      } else if (selectedIds.length === 0) {
         return
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
@@ -206,19 +213,18 @@ export default function App() {
         duplicateSelected()
       } else if (e.key.startsWith('Arrow')) {
         e.preventDefault()
-        const el = doc.elements.find((x) => x.id === selectedId)!
         const step = (doc.page.unit === 'px' ? 1 : 0.5) * (e.shiftKey ? 10 : 1)
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
-        commit(updateEl(doc, selectedId, { x: round(doc.page, el.x + dx), y: round(doc.page, el.y + dy) }), `${selectedId}:nudge`)
+        commit(moveEls(doc, selectedIds, dx, dy), `${selectedIds.join(',')}:nudge`)
       } else if (e.key === 'Enter') {
         // 選んでいるテキストを、その場で書き換え始める
-        if (doc.elements.find((x) => x.id === selectedId)?.kind === 'text') {
+        if (selectedEl?.kind === 'text') {
           e.preventDefault()
-          setEditing({ id: selectedId, selectAll: false })
+          setEditing({ id: selectedEl.id, selectAll: false })
         }
       } else if (e.key === 'Escape') {
-        select(null)
+        select([])
       }
     }
     window.addEventListener('keydown', onKey)
@@ -330,13 +336,13 @@ export default function App() {
             type="button"
             onClick={() => {
               const el = newText(doc.page)
-              addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id)
+              addAndSelect({ ...doc, elements: [...doc.elements, el] }, [el.id])
               setEditing({ id: el.id, selectAll: true })
             }}
           >
             テキスト
           </button>
-          <button type="button" onClick={() => { const el = newRect(doc.page); addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id) }}>
+          <button type="button" onClick={() => { const el = newRect(doc.page); addAndSelect({ ...doc, elements: [...doc.elements, el] }, [el.id]) }}>
             図形
           </button>
           <button type="button" onClick={() => imageInput.current!.click()}>画像</button>
@@ -355,10 +361,10 @@ export default function App() {
           {tab === 'card' && (
             <>
               <hr />
-              <button type="button" onClick={() => { const el = newText(doc.page, '{{品名}}'); addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id) }}>
+              <button type="button" onClick={() => { const el = newText(doc.page, '{{品名}}'); addAndSelect({ ...doc, elements: [...doc.elements, el] }, [el.id]) }}>
                 品名欄
               </button>
-              <button type="button" onClick={() => { const el = newText(doc.page, '{{価格}}円'); addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id) }}>
+              <button type="button" onClick={() => { const el = newText(doc.page, '{{価格}}円'); addAndSelect({ ...doc, elements: [...doc.elements, el] }, [el.id]) }}>
                 価格欄
               </button>
             </>
@@ -369,7 +375,7 @@ export default function App() {
           doc={doc}
           images={images}
           item={previewItem}
-          selectedId={selectedId}
+          selectedIds={selectedIds}
           onSelect={select}
           onPreview={(next) => edit((hh) => replace(hh, next))}
           onCommit={(base) => {
@@ -381,7 +387,17 @@ export default function App() {
           onDuplicate={duplicateSelected}
           onDelete={deleteSelected}
           onDropImages={(files, at) => void addImages(files, at)}
-          onRecolor={(patch, key) => selectedId && commit(updateEl(doc, selectedId, patch), key)}
+          onRecolor={(color, key) =>
+            commit(
+              {
+                ...doc,
+                elements: doc.elements.map((e) =>
+                  !selectedIds.includes(e.id) ? e : e.kind === 'text' ? { ...e, color } : e.kind === 'rect' ? { ...e, fill: color } : e,
+                ),
+              },
+              key,
+            )
+          }
           fontTick={fontTick}
         />
 
@@ -396,7 +412,10 @@ export default function App() {
             onDoc={commit}
             onDelete={deleteSelected}
             onDuplicate={duplicateSelected}
-            onLayer={(dir) => selectedId && commit(moveLayer(doc, selectedId, dir))}
+            onLayer={(dir) => selectedEl && commit(moveLayer(doc, selectedEl.id, dir))}
+            selectionCount={selectedIds.length}
+            onAlign={(to) => commit(alignEls(doc, selectedIds, to))}
+            onDistribute={(axis) => commit(distributeEls(doc, selectedIds, axis))}
           />
         </aside>
       </main>
