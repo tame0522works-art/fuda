@@ -26,6 +26,7 @@ export default function App() {
   const [images, setImages] = useState<ReadonlyMap<string, ImageBitmap>>(new Map())
   const [selected, setSelected] = useState<Record<Tab, string | null>>({ menu: null, pop: null, card: null })
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ id: string; selectAll: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
@@ -162,6 +163,12 @@ export default function App() {
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
         commit(updateEl(doc, selectedId, { x: round(doc.page, el.x + dx), y: round(doc.page, el.y + dy) }), `${selectedId}:nudge`)
+      } else if (e.key === 'Enter') {
+        // 選んでいるテキストを、その場で書き換え始める
+        if (doc.elements.find((x) => x.id === selectedId)?.kind === 'text') {
+          e.preventDefault()
+          setEditing({ id: selectedId, selectAll: false })
+        }
       } else if (e.key === 'Escape') {
         select(null)
       }
@@ -225,7 +232,14 @@ export default function App() {
 
       <main>
         <aside className="tools" aria-label="要素を追加">
-          <button type="button" onClick={() => { const el = newText(doc.page); addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id) }}>
+          <button
+            type="button"
+            onClick={() => {
+              const el = newText(doc.page)
+              addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id)
+              setEditing({ id: el.id, selectAll: true })
+            }}
+          >
             テキスト
           </button>
           <button type="button" onClick={() => { const el = newRect(doc.page); addAndSelect({ ...doc, elements: [...doc.elements, el] }, el.id) }}>
@@ -267,6 +281,8 @@ export default function App() {
             lastEdit.current = null
             edit((hh) => commitFrom(hh, base))
           }}
+          editing={editing}
+          onEdit={setEditing}
         />
 
         <aside className="panel">

@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
-import { round, type Doc, type El } from '../doc'
+import { removeEl, round, updateEl, type Doc, type El } from '../doc'
 import type { Item } from '../fields'
 import { drawDoc, textOverflows, type Images } from '../render'
 import { snapMove, snapResize, type Guide } from '../snap'
+import TextEditBox from './TextEditBox'
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -24,20 +25,30 @@ type Props = {
   onSelect: (id: string | null) => void
   /** ドラッグ中の途中経過（履歴に積まない） */
   onPreview: (doc: Doc) => void
-  /** ドラッグを終えたとき。base はドラッグを始める前の状態 */
+  /** ドラッグや直接入力を終えたとき。base は始める前の状態 */
   onCommit: (base: Doc) => void
+  /** 画面上で直接入力しているテキスト */
+  editing: { id: string; selectAll: boolean } | null
+  onEdit: (editing: { id: string; selectAll: boolean } | null) => void
 }
 
 const PAD = 32
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
 
-export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit }: Props) {
+export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [area, setArea] = useState({ w: 0, h: 0 })
   const [guides, setGuides] = useState<Guide[]>([])
+  // 直接入力は何文字打っても「元に戻す」1回で入力前に戻るよう、始めた時点の状態を覚えておく
+  const editBase = useRef<Doc | null>(null)
+  const docRef = useRef(doc)
+  docRef.current = doc
+  useEffect(() => {
+    editBase.current = editing ? docRef.current : null
+  }, [editing])
 
   useLayoutEffect(() => {
     const el = wrapRef.current!
@@ -57,8 +68,23 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
     const dpr = window.devicePixelRatio || 1
     canvas.width = Math.round(cssW * dpr)
     canvas.height = Math.round(cssH * dpr)
-    drawDoc(canvas.getContext('2d')!, doc, scale * dpr, images, item)
-  }, [doc, images, item, scale, cssW, cssH, area.w])
+    // 入力中の文字はキャンバスに描かず、重ねた入力欄だけに見せる（二重に見えないように）
+    const shown = editing ? { ...doc, elements: doc.elements.filter((e) => e.id !== editing.id) } : doc
+    drawDoc(canvas.getContext('2d')!, shown, scale * dpr, images, item)
+  }, [doc, images, item, scale, cssW, cssH, area.w, editing])
+
+  const finishEdit = () => {
+    const base = editBase.current
+    // blur と Esc が続けて来ても1回だけ確定する
+    if (!base || !editing) return
+    editBase.current = null
+    const current = docRef.current
+    const el = current.elements.find((e) => e.id === editing.id)
+    onEdit(null)
+    // 空にしたテキストは消す。元に戻せば入力前の文字ごと戻る
+    if (el?.kind === 'text' && el.text.trim() === '') onPreview(removeEl(current, el.id))
+    onCommit(base)
+  }
 
   const toUnits = (e: PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect()
@@ -74,6 +100,11 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
   const onStageDown = (e: PointerEvent) => {
     e.stopPropagation()
     if (e.button !== 0) return
+    if (editing) {
+      // 入力中に外をクリックしたら確定だけして、ドラッグは始めない
+      finishEdit()
+      return
+    }
     const p = toUnits(e)
     // 後ろの要素ほど手前に描いているので、後ろから当たり判定する
     const hit = [...doc.elements].reverse().find((el) => p.x >= el.x && p.x <= el.x + el.w && p.y >= el.y && p.y <= el.y + el.h)
@@ -127,7 +158,15 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
     onCommit(d.base)
   }
 
+  const hitText = (e: { clientX: number; clientY: number }) => {
+    const r = canvasRef.current!.getBoundingClientRect()
+    const x = (e.clientX - r.left) / scale
+    const y = (e.clientY - r.top) / scale
+    return [...doc.elements].reverse().find((el) => x >= el.x && x <= el.x + el.w && y >= el.y && y <= el.y + el.h)
+  }
+
   const selected = doc.elements.find((e) => e.id === selectedId)
+  const editingEl = doc.elements.find((e) => e.id === editing?.id)
   const overflow = selected?.kind === 'text' && textOverflows(selected, item)
 
   return (
@@ -139,6 +178,13 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
+        onDoubleClick={(e) => {
+          const hit = hitText(e)
+          if (hit?.kind === 'text') {
+            onSelect(hit.id)
+            onEdit({ id: hit.id, selectAll: false })
+          }
+        }}
       >
         <canvas ref={canvasRef} style={{ width: cssW, height: cssH }} />
         {guides.map((g) => (
@@ -148,7 +194,7 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
             style={g.axis === 'x' ? { left: g.at * scale } : { top: g.at * scale }}
           />
         ))}
-        {selected && (
+        {selected && !editingEl && (
           <div
             className={overflow ? 'selection overflow' : 'selection'}
             style={{ left: selected.x * scale, top: selected.y * scale, width: selected.w * scale, height: selected.h * scale }}
@@ -165,6 +211,16 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
             ))}
             {overflow && <div className="overflow-note">文字が枠からはみ出しています</div>}
           </div>
+        )}
+        {editing && editingEl?.kind === 'text' && (
+          <TextEditBox
+            key={editing.id}
+            el={editingEl}
+            scale={scale}
+            selectAll={editing.selectAll}
+            onChange={(text) => onPreview(updateEl(docRef.current, editingEl.id, { text }))}
+            onFinish={finishEdit}
+          />
         )}
       </div>
     </div>

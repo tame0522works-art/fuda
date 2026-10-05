@@ -403,3 +403,20 @@ main {
   height: 1px;
   margin-top: -0.5px;
 }
+
+.text-edit {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  outline: 1.5px solid var(--select);
+  background: rgb(255 255 255 / 0.6);
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  /* 日本語を1文字単位で折り返し、句読点の禁則も効かせて、確定後のキャンバスの折り返しに近づける */
+  word-break: break-all;
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
