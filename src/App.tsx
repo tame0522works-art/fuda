@@ -9,6 +9,7 @@ import {
 } from './doc'
 import type { Item } from './fields'
 import { commitFrom, initHistory, push, redo, replace, undo, type History } from './history'
+import { isBackupError, parseBackup, toBackup } from './backup'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 
 type Docs = Record<Tab, History<Doc>>
@@ -36,46 +37,55 @@ export default function App() {
   }, [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
   const imageInput = useRef<HTMLInputElement>(null)
+  const backupInput = useRef<HTMLInputElement>(null)
+
+  /** 保存データやバックアップの中身を画面に反映する。元に戻すの履歴と選択はここで初めからにする */
+  const applySaved = useCallback(async (saved: db.Saved) => {
+    const loaded = {
+      menu: saved.docs.menu ?? starterDoc('menu'),
+      pop: saved.docs.pop ?? starterDoc('pop'),
+      card: saved.docs.card ?? starterDoc('card'),
+    }
+    setDocs({ menu: initHistory(loaded.menu), pop: initHistory(loaded.pop), card: initHistory(loaded.card) })
+    setSelected({ menu: null, pop: null, card: null })
+    setEditing(null)
+    // 削除した画像は元に戻せるよう保存したままにしているので、開き直した時点で使われていないものを片付ける
+    const used = new Set(Object.values(loaded).flatMap((d) => d.elements.flatMap((e) => (e.kind === 'image' ? [e.imageId] : []))))
+    for (const id of saved.images.keys()) {
+      if (!used.has(id)) {
+        saved.images.delete(id)
+        void db.deleteImage(id).catch(() => {})
+      }
+    }
+    const loadedItems = saved.items ?? []
+    setItems(loadedItems)
+    setPreviewId(loadedItems[0]?.id ?? null)
+    const decoded = new Map<string, ImageBitmap>()
+    await Promise.all(
+      [...saved.images].map(async ([id, blob]) => {
+        try {
+          decoded.set(id, await createImageBitmap(blob))
+        } catch {
+          // 読めない画像はその要素だけ灰色で表示し、ほかは開けるようにする
+        }
+      }),
+    )
+    setImages(decoded)
+  }, [])
 
   useEffect(() => {
     db.loadAll()
-      .then(async (saved) => {
-        const loaded = {
-          menu: saved.docs.menu ?? starterDoc('menu'),
-          pop: saved.docs.pop ?? starterDoc('pop'),
-          card: saved.docs.card ?? starterDoc('card'),
-        }
-        setDocs({ menu: initHistory(loaded.menu), pop: initHistory(loaded.pop), card: initHistory(loaded.card) })
-        // 削除した画像は元に戻せるよう保存したままにしているので、開き直した時点で使われていないものを片付ける
-        const used = new Set(Object.values(loaded).flatMap((d) => d.elements.flatMap((e) => (e.kind === 'image' ? [e.imageId] : []))))
-        for (const id of saved.images.keys()) {
-          if (!used.has(id)) {
-            saved.images.delete(id)
-            void db.deleteImage(id).catch(() => {})
-          }
-        }
-        const loadedItems = saved.items ?? []
-        setItems(loadedItems)
-        setPreviewId(loadedItems[0]?.id ?? null)
-        const decoded = new Map<string, ImageBitmap>()
-        await Promise.all(
-          [...saved.images].map(async ([id, blob]) => {
-            try {
-              decoded.set(id, await createImageBitmap(blob))
-            } catch {
-              // 読めない画像はその要素だけ灰色で表示し、ほかは開けるようにする
-            }
-          }),
-        )
-        setImages(decoded)
-      })
+      .then(applySaved)
       .catch(() => {
         setError('保存データを読み込めませんでした。見本の状態で開いています（プライベートブラウズでは保存できません）')
         setDocs({ menu: initHistory(starterDoc('menu')), pop: initHistory(starterDoc('pop')), card: initHistory(starterDoc('card')) })
       })
-  }, [])
+    // 容量が足りなくなったとき、ブラウザがこのサイトのデータを自動で消さないよう頼む（認められるかはブラウザ次第）
+    navigator.storage?.persist?.().catch(() => {})
+  }, [applySaved])
 
   // 書き込みはまとめて少し遅らせる（ドラッグ中に毎フレーム保存しない）
   const menu = docs?.menu.present
@@ -236,6 +246,31 @@ export default function App() {
     }
   }
 
+  const saveBackup = async () => {
+    if (!docs) return
+    try {
+      const present = { menu: docs.menu.present, pop: docs.pop.present, card: docs.card.present }
+      const backup = await toBackup(present, items, await db.allImages())
+      download(new Blob([JSON.stringify(backup)], { type: 'application/json' }), `fuda-backup-${fileStamp()}.json`)
+      setNotice(`バックアップを書き出しました（画像 ${Object.keys(backup.images).length} 枚を含む）`)
+    } catch {
+      setError('バックアップを書き出せませんでした')
+    }
+  }
+
+  const restoreBackup = async (file: File) => {
+    try {
+      const restored = parseBackup(JSON.parse(await file.text()))
+      if (!confirm('今のお品書き・ポップ・値札と品目を、バックアップの内容で置き換えます。よろしいですか？')) return
+      await db.replaceAll(restored.docs, restored.items, restored.images)
+      await applySaved({ docs: restored.docs, items: restored.items, images: new Map(restored.images) })
+      setError(null)
+      setNotice(`バックアップから戻しました（画像 ${restored.images.size} 枚）`)
+    } catch (e) {
+      setError(isBackupError(e) ? e.message : e instanceof SyntaxError ? 'JSON として読めませんでした' : '復元できませんでした')
+    }
+  }
+
   if (!docs || !doc) return <div className="loading">読み込み中…</div>
 
   const tabInfo = TABS.find((t) => t.key === tab)!
@@ -254,6 +289,21 @@ export default function App() {
           ))}
         </nav>
         <div className="spacer" />
+        <button type="button" onClick={saveBackup} title="3つのデザイン・品目・画像を1つのファイルに保存する（別の端末へ移すときにも）">
+          バックアップ
+        </button>
+        <button type="button" onClick={() => backupInput.current!.click()} title="バックアップのファイルから戻す">復元</button>
+        <input
+          ref={backupInput}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) void restoreBackup(f)
+          }}
+        />
         <button type="button" onClick={() => edit(undo)} disabled={h.past.length === 0} title="元に戻す (Ctrl+Z)">元に戻す</button>
         <button type="button" onClick={() => edit(redo)} disabled={h.future.length === 0} title="やり直し (Ctrl+Shift+Z)">やり直し</button>
         <button type="button" className="primary" onClick={runExport} disabled={busy}>
@@ -261,6 +311,12 @@ export default function App() {
         </button>
       </header>
 
+      {notice && !error && (
+        <div className="banner ok" role="status">
+          {notice}
+          <button type="button" className="icon" aria-label="閉じる" onClick={() => setNotice(null)}>×</button>
+        </div>
+      )}
       {error && (
         <div className="banner" role="alert">
           {error}

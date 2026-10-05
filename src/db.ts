@@ -65,3 +65,29 @@ export const saveItems = (items: Item[]) => run('meta', 'readwrite', (s) => s.pu
 export const putImage = (id: string, blob: Blob) => run('images', 'readwrite', (s) => s.put(blob, id)).then(() => undefined)
 
 export const deleteImage = (id: string) => run('images', 'readwrite', (s) => s.delete(id)).then(() => undefined)
+
+export async function allImages(): Promise<Map<string, Blob>> {
+  const [keys, values] = await Promise.all([
+    run<IDBValidKey[]>('images', 'readonly', (s) => s.getAllKeys()),
+    run<Blob[]>('images', 'readonly', (s) => s.getAll()),
+  ])
+  return new Map(keys.map((k, i) => [String(k), values[i]]))
+}
+
+/** バックアップからの復元。途中で失敗して半端に混ざらないよう、全部を1つの transaction で入れ替える */
+export async function replaceAll(docs: Record<Tab, Doc>, items: Item[], images: ReadonlyMap<string, Blob>): Promise<void> {
+  const d = await db()
+  await new Promise<void>((resolve, reject) => {
+    const tx = d.transaction(['docs', 'images', 'meta'], 'readwrite')
+    const docStore = tx.objectStore('docs')
+    const imageStore = tx.objectStore('images')
+    docStore.clear()
+    imageStore.clear()
+    for (const [tab, doc] of Object.entries(docs)) docStore.put(doc, tab)
+    for (const [id, blob] of images) imageStore.put(blob, id)
+    tx.objectStore('meta').put(items, 'items')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}

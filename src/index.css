@@ -7,6 +7,7 @@
   --accent: #f0c674;
   --accent-ink: #1b1400;
   --warn: #ff8f6b;
+  --ok: #6fd38a;
   --stage: #222a35;
   --select: #4ea1ff;
   --guide: #ff3d9a;
@@ -28,6 +29,7 @@
     --accent: #b7791f;
     --accent-ink: #ffffff;
     --warn: #c2410c;
+    --ok: #15803d;
     --stage: #e4e8ee;
     --select: #1f6feb;
     --guide: #e0137a;
@@ -505,4 +507,8 @@ main {
   line-height: 1.3;
   border: 1px dashed var(--panel-edge);
   border-radius: 6px;
+}
+.banner.ok {
+  background: color-mix(in srgb, var(--ok) 18%, var(--panel));
+  border-bottom-color: var(--ok);
 }
