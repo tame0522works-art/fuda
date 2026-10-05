@@ -32,15 +32,19 @@ type Props = {
   onEdit: (editing: { id: string; selectAll: boolean } | null) => void
   onDuplicate: () => void
   onDelete: () => void
+  /** 選んでいる要素の色を変える。key は元に戻すを1手にまとめるための識別子 */
+  onRecolor: (patch: { color: string } | { fill: string }, key: string) => void
   /** at はドロップした位置（用紙の単位） */
   onDropImages: (files: File[], at: { x: number; y: number }) => void
 }
 
 const PAD = 32
+
+const colorOf = (el: El) => (el.kind === 'text' ? el.color : el.kind === 'rect' ? el.fill : 'transparent')
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
 
-export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onDropImages }: Props) {
+export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onRecolor, onDropImages }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -255,6 +259,21 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
                 <button type="button" title="文字を書き換える (Enter / ダブルクリック)" onClick={() => onEdit({ id: selected.id, selectAll: false })}>
                   編集
                 </button>
+              )}
+              {selected.kind !== 'image' && (
+                <label className="quick-color" title={selected.kind === 'text' ? '文字の色' : '塗りの色'}>
+                  <span className="chip-swatch" style={{ background: colorOf(selected) }} />
+                  色
+                  <input
+                    type="color"
+                    value={colorOf(selected) === 'transparent' ? '#ffffff' : colorOf(selected)}
+                    onChange={(e) =>
+                      selected.kind === 'text'
+                        ? onRecolor({ color: e.target.value }, `${selected.id}:color`)
+                        : onRecolor({ fill: e.target.value }, `${selected.id}:fill`)
+                    }
+                  />
+                </label>
               )}
               <button type="button" className="danger" title="削除 (Delete)" onClick={onDelete}>削除</button>
             </div>

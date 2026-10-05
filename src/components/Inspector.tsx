@@ -95,6 +95,7 @@ function ElementFields({ doc, el, onDoc, tab }: { doc: Doc; el: El; onDoc: Props
         <section>
           <h2>テキスト</h2>
           <textarea rows={4} value={el.text} onChange={(e) => set({ text: e.target.value }, 'text')} />
+          <ColorField label="文字色" value={el.color} onChange={(color) => set({ color }, 'color')} />
           {tab === 'card' && (
             <div className="row wrap">
               <span className="dim">差し込み:</span>
@@ -129,7 +130,6 @@ function ElementFields({ doc, el, onDoc, tab }: { doc: Doc; el: El; onDoc: Props
             options={[['left', '左'], ['center', '中央'], ['right', '右']]}
             onChange={(align) => set({ align }, 'align')}
           />
-          <ColorField label="文字色" value={el.color} onChange={(color) => set({ color }, 'color')} />
         </section>
       )
     case 'rect':

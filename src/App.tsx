@@ -318,6 +318,7 @@ export default function App() {
           onDuplicate={duplicateSelected}
           onDelete={deleteSelected}
           onDropImages={(files, at) => void addImages(files, at)}
+          onRecolor={(patch, key) => selectedId && commit(updateEl(doc, selectedId, patch), key)}
         />
 
         <aside className="panel">
