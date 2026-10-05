@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict'
 import { newImage, newText, type Doc } from '../src/doc.ts'
 import { duplicateEls } from '../src/group.ts'
+import { textFits } from '../src/render.ts'
+import { starterDoc } from '../src/doc.ts'
 
 const page = { width: 1080, height: 1350, unit: 'px' as const }
 const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elements: [{ ...newText(page, '新刊'), x: 120, y, w: 840, h }] })
@@ -48,6 +50,22 @@ const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elem
 {
   const img = newImage(page, 'p', 2)
   assert.deepEqual([img.x + img.w / 2, img.y + img.h / 2], [540, 675])
+}
+
+// はみ出しの判定は、行間の余白ではなく文字の下端で行う
+{
+  const el = { size: 96, lineHeight: 1.4, h: 130 }
+  assert.equal(textFits(1, el), true, '96px の1行は高さ 130 の枠に収まる（下端は 96 × 1.2 = 115.2）')
+  assert.equal(textFits(2, el), false, '2行（下端 96 × 2.6 = 249.6）は収まらない')
+  assert.equal(textFits(1, { ...el, h: 115.2 }), true, 'ちょうど下端までなら収まる')
+  assert.equal(textFits(1, { ...el, h: 115 }), false)
+}
+
+// 初めて開いたときの見本は、どれも枠に収まっている（改行の数を行数とみなす。見本の文字は枠の幅に余裕がある）
+for (const tab of ['menu', 'pop', 'card'] as const) {
+  for (const el of starterDoc(tab).elements) {
+    if (el.kind === 'text') assert.ok(textFits(el.text.split('\n').length, el), `見本の「${el.text}」が枠からはみ出す`)
+  }
 }
 
 console.log('check:doc OK')

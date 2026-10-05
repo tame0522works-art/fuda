@@ -141,7 +141,16 @@ function drawCutMarks(
 
 /** 折り返した結果が枠の高さに収まらないか。値札では品名が長いものだけはみ出すので、品目ごとに確かめる */
 export function textOverflows(el: TextEl, item?: Item): boolean {
-  return textLines(el, item).length * el.size * el.lineHeight > el.h + 1e-6
+  return !textFits(textLines(el, item).length, el)
+}
+
+/**
+ * n 行の文字が枠の高さに収まるか。行間の余白ではなく、最後の行の文字の下端で判定する。
+ * 各行は行の高さ（size × lineHeight）の中央に描くので、最後の行の文字の下端は
+ * 上から size × (lineHeight × (n − 0.5) + 0.5)。行間の余白まで数えると、見た目は収まっている1行の見出しでも「はみ出し」になってしまう。
+ */
+export function textFits(n: number, el: Pick<TextEl, 'size' | 'lineHeight' | 'h'>): boolean {
+  return el.size * (el.lineHeight * (n - 0.5) + 0.5) <= el.h + 1e-6
 }
 
 /** 書体の読み込みに渡す「どの書体・太さで、どの文字を描くか」。値札は品目ごとに差し込んだ後の文字で数える */
