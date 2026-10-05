@@ -10,6 +10,7 @@ import {
 import type { Item } from './fields'
 import { commitFrom, initHistory, push, redo, replace, undo, type History } from './history'
 import { isBackupError, parseBackup, toBackup } from './backup'
+import { missingFonts } from './fonts'
 import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 
@@ -231,8 +232,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // 別の PC で PC の書体を選んだデザインを開いたとき、黙って代わりの書体にならないよう知らせる
+  const missing = doc ? missingFonts(doc.elements.flatMap((e) => (e.kind === 'text' ? [e.font] : []))) : []
+
   const runExport = async () => {
     if (!docs) return
+    if (missing.length > 0 && !confirm(`この端末には${missing.map((m) => `「${m}」`).join('')}がないため、代わりの書体で書き出されます。書き出しますか？`)) return
     setBusy(true)
     setError(null)
     try {
@@ -317,6 +322,11 @@ export default function App() {
         </button>
       </header>
 
+      {missing.length > 0 && (
+        <div className="banner" role="status">
+          この端末にない書体を使っています: {missing.map((m) => `「${m}」`).join('')}。代わりの書体で表示・書き出しされます（作った PC で開けば元の書体に戻ります）。
+        </div>
+      )}
       {notice && !error && (
         <div className="banner ok" role="status">
           {notice}

@@ -69,3 +69,31 @@ export async function listLocalFonts(): Promise<string[]> {
   const fonts = await (window as WindowWithLocalFonts).queryLocalFonts!()
   return [...new Set(fonts.map((f) => safeFamily(f.family)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'))
 }
+
+const availability = new Map<string, boolean>()
+
+/**
+ * PC の書体がこの端末に入っているか。別の PC で作ったデザインを開くと、入っていない書体は黙って代わりの書体になるため。
+ * 同じ文字列を「その書体＋代わりの書体」と「代わりの書体だけ」で測り、どの代わりの書体でも幅が変わらなければ入っていない。
+ * 代わりを3種類試すのは、たまたま同じ幅の書体だった場合に見誤らないため。同梱・標準の書体は常に true。
+ */
+export function isFontAvailable(key: string): boolean {
+  if (!key.startsWith(LOCAL_PREFIX)) return true
+  const cached = availability.get(key)
+  if (cached !== undefined) return cached
+  const family = safeFamily(key.slice(LOCAL_PREFIX.length))
+  const ctx = new OffscreenCanvas(1, 1).getContext('2d')!
+  const sample = 'お品書き 新刊 700円 ABCabc'
+  const width = (font: string) => {
+    ctx.font = font
+    return ctx.measureText(sample).width
+  }
+  const found = ['monospace', 'serif', 'sans-serif'].some((base) => width(`72px "${family}", ${base}`) !== width(`72px ${base}`))
+  availability.set(key, found)
+  return found
+}
+
+/** デザインの中で使われている、この端末にない書体の名前 */
+export function missingFonts(fonts: readonly string[]): string[] {
+  return [...new Set(fonts)].filter((k) => !isFontAvailable(k)).map(fontLabel)
+}

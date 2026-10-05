@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { FIELDS } from '../fields'
 import { PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
 import type { Align } from '../group'
-import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, listLocalFonts, localFontKey } from '../fonts'
+import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, isFontAvailable, listLocalFonts, localFontKey } from '../fonts'
 
 type Props = {
   tab: Tab
@@ -285,6 +285,9 @@ function FontPicker({ value, onChange, localFonts, onLocalFonts }: {
         )}
       </select>
       <p className="font-sample" style={{ fontFamily: fontStack(value) }}>お品書き 新刊 700円 Aa</p>
+      {!isFontAvailable(value) && (
+        <p className="msg error">この端末には「{fontLabel(value)}」がありません。代わりの書体で表示・書き出しされます。</p>
+      )}
       {canListLocalFonts() && localFonts.length === 0 && (
         <button type="button" className="chip" onClick={addLocal}>この PC の書体を一覧に追加</button>
       )}
