@@ -9,8 +9,23 @@
 - **値札** … 1枚デザインして品目を差し込み、A4 に面付けした PDF（名刺サイズなら10面）
 
 デザインも表紙画像も端末の IndexedDB にだけ保存し、どこにも送りません。
+公開版は Content Security Policy で通信そのものを禁止しているので、仮にコードに送信処理が紛れ込んでもブラウザが拒否します（下の「通信をブラウザに禁止させる」）。
 
 ## 作りの要点
+
+### 通信をブラウザに禁止させる
+
+「送る処理を書いていない」だけでなく、公開版の HTML に CSP を入れて、ブラウザに通信そのものを拒否させている（[vite.config.ts](vite.config.ts)）。
+
+```
+default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' data:;
+connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
+```
+
+`connect-src 'none'` で fetch・XHR・WebSocket・sendBeacon はすべて拒否される（同じサイトへの通信も含む。fuda は通信を使わないので困らない）。
+公開用ビルドで、外部への送信が拒否されること、同梱フォントの読み込み・画像の追加・PDF 書き出し・バックアップがすべて違反なく動くことを確かめた。
+GitHub Pages はレスポンスヘッダーを設定できないので `<meta>` で入れている。そのため `frame-ancestors`（他サイトへの埋め込み禁止）は指定できない。
+開発サーバーは更新の通知に WebSocket を使うので、CSP はビルドのときだけ入れる。
 
 ### 3種類の出力を1つのエンジンで描く
 
