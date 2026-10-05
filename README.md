@@ -52,6 +52,12 @@ Esc・Ctrl+Enter・外側のクリックで確定し、何文字打っても「�
 
 [tsuri](https://github.com/tame0522works-art/tsuri)（即売会の頒布管理）の「バックアップ（JSON）」を読み込むと、品名と価格が値札の品目になります。
 
+## 使ってみて直したこと
+
+作者が自分で試用し、詰まったところとその対応を [docs/trial-log.md](docs/trial-log.md) に残している。
+
+- **行を増やす方法が分からなかった** → 要素を選ぶとそばに「複製・編集・削除」を出し、複製は元のすぐ下に同じ書式で置くようにした。
+
 ## 書き出しの実測
 
 2026-10-05、AMD Ryzen 7 5700X ／ Chrome 152（Claude デスクトップアプリの内蔵ブラウザ）、開発サーバー上で計測。
@@ -81,6 +87,6 @@ npm run dev
 ```
 
 ```bash
-npm run check   # 折り返し・面付け・PDF の構造・tsuri の読み込み・吸着を検証
+npm run check   # 折り返し・面付け・PDF の構造・tsuri の読み込み・吸着・複製の位置を検証
 npm run build
 ```

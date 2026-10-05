@@ -30,13 +30,15 @@ type Props = {
   /** 画面上で直接入力しているテキスト */
   editing: { id: string; selectAll: boolean } | null
   onEdit: (editing: { id: string; selectAll: boolean } | null) => void
+  onDuplicate: () => void
+  onDelete: () => void
 }
 
 const PAD = 32
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
 
-export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit }: Props) {
+export default function Editor({ doc, images, item, selectedId, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -210,6 +212,19 @@ export default function Editor({ doc, images, item, selectedId, onSelect, onPrev
               />
             ))}
             {overflow && <div className="overflow-note">文字が枠からはみ出しています</div>}
+            {/* よく使う操作は右のパネルまで探しに行かなくて済むよう、選んだ要素のそばに出す */}
+            <div
+              className={selected.y * scale < 40 ? 'quick-actions below' : 'quick-actions'}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <button type="button" title="すぐ下に同じ書式で増やす (Ctrl+D)" onClick={onDuplicate}>複製</button>
+              {selected.kind === 'text' && (
+                <button type="button" title="文字を書き換える (Enter / ダブルクリック)" onClick={() => onEdit({ id: selected.id, selectAll: false })}>
+                  編集
+                </button>
+              )}
+              <button type="button" className="danger" title="削除 (Delete)" onClick={onDelete}>削除</button>
+            </div>
           </div>
         )}
         {editing && editingEl?.kind === 'text' && (

@@ -420,3 +420,24 @@ main {
   line-break: strict;
   overflow-wrap: anywhere;
 }
+
+.quick-actions {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.quick-actions.below {
+  bottom: auto;
+  top: 100%;
+  margin: 8px 0 0;
+}
+.quick-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}

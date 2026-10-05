@@ -14,7 +14,8 @@
     "check:pdf": "tsx tools/check-pdf.ts",
     "check:tsuri": "tsx tools/check-tsuri.ts",
     "check:snap": "tsx tools/check-snap.ts",
-    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap"
+    "check:duplicate": "tsx tools/check-duplicate.ts",
+    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap && npm run check:duplicate"
   },
   "dependencies": {
     "react": "^19.2.8",

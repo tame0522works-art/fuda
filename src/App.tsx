@@ -136,6 +136,13 @@ export default function App() {
     setSelected((s) => ({ ...s, [tab]: null }))
   }, [doc, selectedId, commit, tab])
 
+  const duplicateSelected = useCallback(() => {
+    if (!doc || !selectedId) return
+    const r = duplicateEl(doc, selectedId)
+    commit(r.doc)
+    setSelected((s) => ({ ...s, [tab]: r.id }))
+  }, [doc, selectedId, commit, tab])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || !docs) return
@@ -153,9 +160,7 @@ export default function App() {
         deleteSelected()
       } else if (mod && e.key.toLowerCase() === 'd') {
         e.preventDefault()
-        const r = duplicateEl(doc, selectedId)
-        commit(r.doc)
-        select(r.id)
+        duplicateSelected()
       } else if (e.key.startsWith('Arrow')) {
         e.preventDefault()
         const el = doc.elements.find((x) => x.id === selectedId)!
@@ -283,6 +288,8 @@ export default function App() {
           }}
           editing={editing}
           onEdit={setEditing}
+          onDuplicate={duplicateSelected}
+          onDelete={deleteSelected}
         />
 
         <aside className="panel">
@@ -295,11 +302,7 @@ export default function App() {
             selected={selectedEl}
             onDoc={commit}
             onDelete={deleteSelected}
-            onDuplicate={() => {
-              if (!selectedId) return
-              const r = duplicateEl(doc, selectedId)
-              addAndSelect(r.doc, r.id)
-            }}
+            onDuplicate={duplicateSelected}
             onLayer={(dir) => selectedId && commit(moveLayer(doc, selectedId, dir))}
           />
         </aside>

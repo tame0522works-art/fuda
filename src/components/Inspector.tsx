@@ -54,6 +54,7 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
       ) : (
         <section>
           <p className="dim">ページ上の要素をクリックすると、ここで文字や色を変えられます。</p>
+          <p className="dim">行を増やすときは、近い行を選んで「複製」を押すと、すぐ下に同じ書式の行ができます。</p>
         </section>
       )}
 

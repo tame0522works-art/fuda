@@ -153,11 +153,19 @@ export function moveLayer(doc: Doc, id: string, dir: 1 | -1): Doc {
   return { ...doc, elements }
 }
 
+/**
+ * 複製は元の要素のすぐ下に置く。お品書きでは「行を1つ増やす」操作として使われるため。
+ * 下に入らなければすぐ上、それも無理ならずらして重ねる。
+ */
 export function duplicateEl(doc: Doc, id: string): { doc: Doc; id: string } {
   const src = doc.elements.find((e) => e.id === id)
   if (!src) return { doc, id }
   const offset = round(doc.page, Math.min(doc.page.width, doc.page.height) * 0.03)
-  const copy = { ...src, id: uid(), x: src.x + offset, y: src.y + offset }
+  const y =
+    src.y + src.h * 2 <= doc.page.height ? src.y + src.h
+    : src.y - src.h >= 0 ? src.y - src.h
+    : src.y + offset
+  const copy = { ...src, id: uid(), x: y === src.y + offset ? src.x + offset : src.x, y: round(doc.page, y) }
   const i = doc.elements.indexOf(src)
   return { doc: { ...doc, elements: [...doc.elements.slice(0, i + 1), copy, ...doc.elements.slice(i + 1)] }, id: copy.id }
 }
