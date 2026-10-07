@@ -421,8 +421,10 @@ export default function App() {
       )}
       {pwa.updateReady && (
         <div className="banner ok" role="status">
-          fuda の新しい版があります。作ったデザインはそのまま残ります。
-          <button type="button" className="primary" onClick={applyUpdate}>更新する</button>
+          <span>fuda の新しい版があります。作ったデザインはそのまま残ります。</span>
+          <span className="banner-actions">
+            <button type="button" className="primary" onClick={applyUpdate}>更新する</button>
+          </span>
         </div>
       )}
       {notInstalled.length > 0 && (

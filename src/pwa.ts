@@ -17,6 +17,19 @@ let waiting: ServiceWorker | null = null
 let installPrompt: InstallPromptEvent | null = null
 let reloadOnSwitch = false
 
+/**
+ * 開いた直後で、まだ何も操作していないうちに新しい版が届いたら、知らせずにそのまま切り替える。
+ * Service Worker が入ったあとは、ブラウザの再読み込みだけでは新しい版に切り替わらないので、
+ * 「再読み込みしたのに古いまま」を防ぐため。作業を始めたあとに届いたときは知らせて、押してもらう
+ */
+const QUIET_SWITCH_MS = 10_000
+const openedAt = performance.now()
+let interacted = false
+for (const type of ['pointerdown', 'keydown']) {
+  window.addEventListener(type, () => (interacted = true), { capture: true, once: true })
+}
+const canSwitchQuietly = () => !interacted && performance.now() - openedAt < QUIET_SWITCH_MS
+
 function set(patch: Partial<PwaState>) {
   state = { ...state, ...patch }
   listeners.forEach((fn) => fn())
@@ -57,7 +70,8 @@ export function startPwa() {
           // 初めて入れたとき（まだ制御されていない）は知らせない。古い版から切り替わるときだけ
           if (sw.state === 'installed' && navigator.serviceWorker.controller) {
             waiting = sw
-            set({ updateReady: true })
+            if (canSwitchQuietly()) applyUpdate()
+            else set({ updateReady: true })
           }
         }
         check()

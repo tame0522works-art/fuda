@@ -441,6 +441,32 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    name: '「新しい版があります」が出たまま再読み込みしても、古い版のままにならない',
+    async run(ui) {
+      await ui.open()
+      await ui.waitForServiceWorker()
+      // 作業中（何か操作したあと）に新しい版が届くと、知らせを出して待機させる
+      await ui.key('Escape')
+      const swPath = join('dist-e2e', 'sw.js')
+      const original = readFileSync(swPath, 'utf8')
+      const newCache = original.match(/const CACHE = '(fuda-[0-9a-f]{12})'/)![1].replace(/[0-9a-f]{12}$/, (v) => [...v].reverse().join(''))
+      writeFileSync(swPath, original.replace(/const CACHE = 'fuda-[0-9a-f]{12}'/, `const CACHE = '${newCache}'`))
+      try {
+        await ui.page.run(`await (await navigator.serviceWorker.ready).update()`)
+        await ui.page.waitFor(`[...document.querySelectorAll('.banner')].some(b => b.textContent.includes('新しい版があります'))`, '新しい版の知らせ')
+        // ここで「更新する」を押さずに再読み込みする。ブラウザの再読み込みだけでは待機中の版に切り替わらないので、
+        // 開き直した直後（まだ操作していない）に fuda が自分で切り替える
+        await ui.reload()
+        await ui.page.waitFor(`caches.keys().then(k => k.includes('${newCache}') && !k.some(n => /^fuda-[0-9a-f]{12}$/.test(n) && n !== '${newCache}'))`, '新しい版への切り替え', 20_000)
+        await ui.page.waitFor(`document.querySelector('.paper canvas')`, '読み直し')
+        await sleep(800)
+        assert.equal(await ui.banner('新しい版があります'), false, '切り替わったので知らせは出ない')
+      } finally {
+        writeFileSync(swPath, original)
+      }
+    },
+  },
+  {
     name: '新しい版が届くと知らせが出て、「更新する」で切り替わり、作ったデザインは残る',
     async run(ui) {
       await ui.open()

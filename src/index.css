@@ -739,6 +739,8 @@ main {
   display: inline-flex;
   gap: 6px;
   margin-left: 12px;
+  /* 帯の右端に離さず、文章のすぐ隣に置く（画面が広いと右端のボタンは目に入らない） */
+  margin-right: auto;
   flex: none;
 }
 .banner-actions button {
