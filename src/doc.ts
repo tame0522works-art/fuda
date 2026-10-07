@@ -56,6 +56,7 @@ export const PRESETS: Record<Tab, PagePreset[]> = {
   menu: [
     { label: '縦長 4:5（1080×1350）', page: { width: 1080, height: 1350, unit: 'px' } },
     { label: '正方形（1080×1080）', page: { width: 1080, height: 1080, unit: 'px' } },
+    { label: '横長 16:9（1920×1080）', page: { width: 1920, height: 1080, unit: 'px' } },
     { label: '横長 16:9（1600×900）', page: { width: 1600, height: 900, unit: 'px' } },
   ],
   pop: [
@@ -69,6 +70,24 @@ export const PRESETS: Record<Tab, PagePreset[]> = {
     { label: '名刺 縦（55×91）', page: { width: 55, height: 91, unit: 'mm' } },
     { label: 'A8（74×52）', page: { width: 74, height: 52, unit: 'mm' } },
   ],
+}
+
+/**
+ * 用紙の選択肢を選んだときの新しい用紙。
+ * 印刷物（mm）の選択肢は「A4」のように向きを持たないので、横向きで使っていれば横向きのまま大きさだけ変える。
+ * お品書き（px）の選択肢は「縦長」「横長」と向きまで決まっているので、選んだとおりにする。
+ */
+export function applyPreset(current: Page, preset: Page): Page {
+  const flip = preset.unit === 'mm' && current.width > current.height !== preset.width > preset.height
+  return flip ? { ...preset, width: preset.height, height: preset.width } : preset
+}
+
+/** 今の用紙がどの選択肢か。印刷物は縦横を入れ替えたものも同じ選択肢とみなす。当てはまらなければ -1 */
+export function presetIndexOf(tab: Tab, page: Page): number {
+  return PRESETS[tab].findIndex(
+    ({ page: p }) =>
+      (p.width === page.width && p.height === page.height) || (p.unit === 'mm' && p.width === page.height && p.height === page.width),
+  )
 }
 
 export const uid = () => crypto.randomUUID()

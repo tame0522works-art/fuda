@@ -1,9 +1,8 @@
-// 要素を足す位置を確かめる: 複製は「すぐ下に1行増える」位置、画像はドロップした点を中心にしてページ内に収める
+// 要素と用紙の扱いを確かめる: 複製・画像を置く位置、はみ出しの判定、用紙の選択肢を選んだときの向き
 import assert from 'node:assert/strict'
-import { newImage, newText, type Doc } from '../src/doc.ts'
+import { PRESETS, applyPreset, newImage, newText, presetIndexOf, starterDoc, type Doc } from '../src/doc.ts'
 import { duplicateEls } from '../src/group.ts'
 import { textFits } from '../src/render.ts'
-import { starterDoc } from '../src/doc.ts'
 
 const page = { width: 1080, height: 1350, unit: 'px' as const }
 const docWith = (y: number, h: number): Doc => ({ page, background: '#fff', elements: [{ ...newText(page, '新刊'), x: 120, y, w: 840, h }] })
@@ -66,6 +65,20 @@ for (const tab of ['menu', 'pop', 'card'] as const) {
   for (const el of starterDoc(tab).elements) {
     if (el.kind === 'text') assert.ok(textFits(el.text.split('\n').length, el), `見本の「${el.text}」が枠からはみ出す`)
   }
+}
+
+// 用紙の選択肢: お品書きは選んだ向きのまま、印刷物は今の向きを保つ
+{
+  const portrait = { width: 1080, height: 1350, unit: 'px' as const }
+  const fhd = PRESETS.menu.find((p) => p.label.includes('1920'))!.page
+  assert.deepEqual(applyPreset(portrait, fhd), { width: 1920, height: 1080, unit: 'px' }, '縦長のお品書きから「横長 1920×1080」を選ぶと横長になる')
+  assert.equal(presetIndexOf('menu', { width: 1920, height: 1080, unit: 'px' }), PRESETS.menu.findIndex((p) => p.label.includes('1920')))
+  assert.equal(presetIndexOf('menu', { width: 1080, height: 1920, unit: 'px' }), -1, '縦横を入れ替えたお品書きは「横長」とは表示しない')
+
+  const a4Landscape = { width: 297, height: 210, unit: 'mm' as const }
+  const b5 = PRESETS.pop.find((p) => p.label.startsWith('B5'))!.page
+  assert.deepEqual(applyPreset(a4Landscape, b5), { width: 257, height: 182, unit: 'mm' }, '横向きの A4 から B5 を選ぶと横向きの B5')
+  assert.equal(presetIndexOf('pop', a4Landscape), 0, '横向きの A4 も「A4」とみなす')
 }
 
 console.log('check:doc OK')

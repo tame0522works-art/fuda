@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { FIELDS } from '../fields'
-import { PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
+import { PRESETS, PT_IN_MM, applyPreset, presetIndexOf, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
 import { isTouch } from '../device'
 import type { Align } from '../group'
 import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, isFontAvailable, listLocalFonts, localFontKey } from '../fonts'
@@ -22,9 +22,7 @@ type Props = {
 
 export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDuplicate, onLayer, selectionCount, onAlign, onDistribute }: Props) {
   const { page } = doc
-  const presetIndex = PRESETS[tab].findIndex(
-    (p) => (p.page.width === page.width && p.page.height === page.height) || (p.page.width === page.height && p.page.height === page.width),
-  )
+  const presetIndex = presetIndexOf(tab, page)
   const unit = page.unit
   // PC の書体一覧は許可を取って読むものなので、ボタンを押したときだけ読み、この画面を開いている間だけ覚えておく
   const [localFonts, setLocalFonts] = useState<string[]>([])
@@ -37,12 +35,7 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
           <span>大きさ</span>
           <select
             value={presetIndex}
-            onChange={(e) => {
-              const preset = PRESETS[tab][Number(e.target.value)].page
-              // 縦横を入れ替えて使っている場合は、向きを保ったまま大きさだけ変える
-              const landscape = page.width > page.height !== preset.width > preset.height
-              onDoc(resizePage(doc, landscape ? { ...preset, width: preset.height, height: preset.width } : preset))
-            }}
+            onChange={(e) => onDoc(resizePage(doc, applyPreset(page, PRESETS[tab][Number(e.target.value)].page)))}
           >
             {presetIndex < 0 && <option value={-1}>カスタム</option>}
             {PRESETS[tab].map((p, i) => (
