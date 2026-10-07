@@ -730,3 +730,12 @@ main {
   margin-left: 12px;
   padding: 4px 12px;
 }
+.banner-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 12px;
+  flex: none;
+}
+.banner-actions button {
+  padding: 4px 12px;
+}

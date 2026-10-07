@@ -1,5 +1,6 @@
 import type { Doc, Tab } from './doc'
 import type { Item } from './fields'
+import { EMPTY_STATUS, type BackupStatus } from './reminder'
 
 /** デザインも画像もこの端末の IndexedDB にだけ置く。どこにも送らない */
 
@@ -41,13 +42,16 @@ export type Saved = {
   docs: Partial<Record<Tab, Doc>>
   items: Item[] | undefined
   images: Map<string, Blob>
+  /** 読み込み時だけ使う。バックアップからの復元では今の値を引き継ぐ */
+  backup?: BackupStatus
 }
 
 export async function loadAll(): Promise<Saved> {
-  const [docKeys, docValues, items, imageKeys, imageValues] = await Promise.all([
+  const [docKeys, docValues, items, backup, imageKeys, imageValues] = await Promise.all([
     run<IDBValidKey[]>('docs', 'readonly', (s) => s.getAllKeys()),
     run<Doc[]>('docs', 'readonly', (s) => s.getAll()),
     run<Item[] | undefined>('meta', 'readonly', (s) => s.get('items')),
+    run<BackupStatus | undefined>('meta', 'readonly', (s) => s.get('backup')),
     run<IDBValidKey[]>('images', 'readonly', (s) => s.getAllKeys()),
     run<Blob[]>('images', 'readonly', (s) => s.getAll()),
   ])
@@ -55,10 +59,12 @@ export async function loadAll(): Promise<Saved> {
   docKeys.forEach((k, i) => (docs[k as Tab] = docValues[i]))
   const images = new Map<string, Blob>()
   imageKeys.forEach((k, i) => images.set(String(k), imageValues[i]))
-  return { docs, items, images }
+  return { docs, items, images, backup: backup ?? EMPTY_STATUS }
 }
 
 export const saveDoc = (tab: Tab, doc: Doc) => run('docs', 'readwrite', (s) => s.put(doc, tab)).then(() => undefined)
+
+export const saveBackupStatus = (status: BackupStatus) => run('meta', 'readwrite', (s) => s.put(status, 'backup')).then(() => undefined)
 
 export const saveItems = (items: Item[]) => run('meta', 'readwrite', (s) => s.put(items, 'items')).then(() => undefined)
 

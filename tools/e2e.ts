@@ -41,6 +41,19 @@ class Ui {
     await this.page.run(`await document.fonts.ready; await new Promise(r => setTimeout(r, 600))`)
   }
 
+  /** 端末の中の保存データ（IndexedDB の meta）を直接書き換える。時間の経過を待たずに確かめるため */
+  async setMeta(key: string, value: unknown) {
+    await this.page.run(`
+      const db = await new Promise((ok, ng) => { const r = indexedDB.open('fuda'); r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error) });
+      await new Promise((ok, ng) => { const tx = db.transaction('meta', 'readwrite'); tx.objectStore('meta').put(${JSON.stringify(value)}, ${JSON.stringify(key)}); tx.oncomplete = ok; tx.onerror = () => ng(tx.error) });
+      db.close();
+    `)
+  }
+
+  banner(includes: string) {
+    return this.page.run<boolean>(`return [...document.querySelectorAll('.banner')].some(b => b.textContent.includes(${JSON.stringify(includes)}))`)
+  }
+
   /** Service Worker が入り、このページを受け持つまで待つ */
   async waitForServiceWorker() {
     await this.page.run(`await navigator.serviceWorker.ready`)
@@ -326,6 +339,38 @@ const scenarios: Scenario[] = [
       assert.ok(await ui.page.run(`return !!document.querySelector('.quick-actions')`), 'タップで選ぶと、そばにボタンが出る')
       const docW = await ui.page.run<number>(`return document.documentElement.scrollWidth`)
       assert.equal(docW, layout.innerW, '選んで右パネルが変わっても、横にはみ出さない')
+    },
+  },
+  {
+    name: 'バックアップしていない編集が3日続くとバックアップを促し、取ると消える',
+    async run(ui) {
+      await ui.open()
+      await ui.drag([540, 500], [600, 520], ALT)
+      await sleep(600)
+      assert.equal(await ui.banner('バックアップを取って'), false, '編集してすぐには出さない')
+      await ui.setMeta('backup', { unbackedSince: Date.now() - 3 * 24 * 60 * 60_000 - 60_000, lastBackupAt: null })
+      await ui.reload()
+      assert.equal(await ui.banner('まだバックアップを取っていません'), true, '3日たつと知らせる')
+      await ui.button('バックアップ', '.banner')
+      const saved = JSON.parse((await ui.download('.json')).toString('utf8'))
+      assert.equal(saved.app, 'fuda')
+      assert.equal(await ui.banner('バックアップを取って'), false, 'バックアップを取ると消える')
+      await ui.reload()
+      assert.equal(await ui.banner('バックアップを取って'), false, '開き直しても出ない')
+    },
+  },
+  {
+    name: 'iPhone の Safari では、編集を続けると「7日間で消えることがある」と知らせる',
+    async run(ui) {
+      await ui.page.send('Emulation.setUserAgentOverride', {
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      })
+      await ui.open()
+      await ui.setMeta('backup', { unbackedSince: Date.now() - 11 * 60_000, lastBackupAt: null })
+      await ui.reload()
+      assert.equal(await ui.banner('Safari では、7日間開かないと'), true)
+      await ui.button('あとで', '.banner')
+      assert.equal(await ui.banner('Safari では、7日間開かないと'), false, '「あとで」で閉じる')
     },
   },
   {

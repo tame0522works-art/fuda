@@ -15,6 +15,7 @@ import { missingFonts } from './fonts'
 import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 import { applyUpdate, install, needsIosHint, usePwa } from './pwa'
+import { EMPTY_STATUS, backupReminder, markBackedUp, markEdited, markRestored, type BackupStatus } from './reminder'
 
 type Docs = Record<Tab, History<Doc>>
 
@@ -44,6 +45,16 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [preview, setPreview] = useState<ExportPreviewData | null>(null)
   const pwa = usePwa()
+  const [backupStatus, setBackupStatus] = useState<BackupStatus>(EMPTY_STATUS)
+  const [reminderDismissed, setReminderDismissed] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  // 知らせを出すかは時間の経過で変わるので、1 分ごとに見直す
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  // 読み込んだばかりのデザインは「編集」として数えない
+  const loadedDocs = useRef<unknown[]>([])
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const backupInput = useRef<HTMLInputElement>(null)
@@ -57,6 +68,8 @@ export default function App() {
       card: saved.docs.card ?? starterDoc('card'),
     }
     setDocs({ menu: initHistory(loaded.menu), pop: initHistory(loaded.pop), card: initHistory(loaded.card) })
+    loadedDocs.current = [loaded.menu, loaded.pop, loaded.card]
+    if (saved.backup) setBackupStatus(saved.backup)
     setSelected({ menu: [], pop: [], card: [] })
     setEditing(null)
     // 削除した画像は元に戻せるよう保存したままにしているので、開き直した時点で使われていないものを片付ける
@@ -98,16 +111,27 @@ export default function App() {
   const menu = docs?.menu.present
   const pop = docs?.pop.present
   const card = docs?.card.present
+  const updateBackupStatus = useCallback((fn: (s: BackupStatus) => BackupStatus) => {
+    setBackupStatus((s) => {
+      const next = fn(s)
+      if (next !== s) db.saveBackupStatus(next).catch(() => {})
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!menu || !pop || !card) return
+    const [m, p, c] = loadedDocs.current
+    if (menu !== m || pop !== p || card !== c) updateBackupStatus((s) => markEdited(s, Date.now()))
     const timer = setTimeout(() => {
       Promise.all([db.saveDoc('menu', menu), db.saveDoc('pop', pop), db.saveDoc('card', card)]).catch(() => setError('保存に失敗しました'))
     }, 400)
     return () => clearTimeout(timer)
-  }, [menu, pop, card])
+  }, [menu, pop, card, updateBackupStatus])
 
   const updateItems = (next: Item[]) => {
     setItems(next)
+    updateBackupStatus((s) => markEdited(s, Date.now()))
     db.saveItems(next).catch(() => setError('品目の保存に失敗しました'))
   }
 
@@ -278,6 +302,7 @@ export default function App() {
       const backup = await toBackup(present, items, await db.allImages())
       download(new Blob([JSON.stringify(backup)], { type: 'application/json' }), `fuda-backup-${fileStamp()}.json`)
       setNotice(`バックアップを書き出しました（画像 ${Object.keys(backup.images).length} 枚を含む）`)
+      updateBackupStatus((s) => markBackedUp(s, Date.now()))
     } catch {
       setError('バックアップを書き出せませんでした')
     }
@@ -291,10 +316,13 @@ export default function App() {
       await applySaved({ docs: restored.docs, items: restored.items, images: new Map(restored.images) })
       setError(null)
       setNotice(`バックアップから戻しました（画像 ${restored.images.size} 枚）`)
+      updateBackupStatus(markRestored)
     } catch (e) {
       setError(isBackupError(e) ? e.message : e instanceof SyntaxError ? 'JSON として読めませんでした' : '復元できませんでした')
     }
   }
+
+  const reminder = backupReminder(backupStatus, now, needsIosHint())
 
   if (!docs || !doc) return <div className="loading">読み込み中…</div>
 
@@ -355,6 +383,21 @@ export default function App() {
         </div>
       </header>
 
+      {reminder && !reminderDismissed && (
+        <div className="banner" role="status">
+          <span>
+            {reminder.kind === 'ios'
+              ? 'Safari では、7日間開かないとサイトのデータが消えることがあります。ホーム画面に追加するか、バックアップを取っておいてください。'
+              : reminder.daysSinceBackup === null
+                ? 'まだバックアップを取っていません。デザインはこのブラウザの中にしかないので、ときどきバックアップを取っておくと安心です。'
+                : `最後のバックアップから ${reminder.daysSinceBackup} 日たっています。その後の編集も残しておくには、もう一度バックアップを取ってください。`}
+          </span>
+          <span className="banner-actions">
+            <button type="button" className="primary" onClick={() => void saveBackup()}>バックアップ</button>
+            <button type="button" onClick={() => setReminderDismissed(true)}>あとで</button>
+          </span>
+        </div>
+      )}
       {pwa.updateReady && (
         <div className="banner ok" role="status">
           fuda の新しい版があります。作ったデザインはそのまま残ります。
