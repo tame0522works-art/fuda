@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Editor from './components/Editor'
 import Inspector from './components/Inspector'
 import ItemsPanel from './components/ItemsPanel'
+import CardSteps from './components/CardSteps'
 import ExportPreview, { releasePreview, type ExportPreviewData } from './components/ExportPreview'
 import * as db from './db'
 import {
@@ -16,6 +17,8 @@ import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './gro
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 import { applyUpdate, install, needsIosHint, usePwa } from './pwa'
 import { EMPTY_STATUS, backupReminder, markBackedUp, markEdited, markRestored, type BackupStatus } from './reminder'
+import { textOverflows } from './render'
+import { cardSteps, hasFieldText } from './steps'
 
 type Docs = Record<Tab, History<Doc>>
 
@@ -343,7 +346,29 @@ export default function App() {
     }
   }
 
+  // スマホでページを画面上部に残している間、ページより上にある部分（ボタン類・知らせ・値札の手順）の高さを測って CSS に渡す。
+  // 知らせや手順は出たり消えたりするので、描くたびに測り直す（index.css の scroll-margin-top で使う）
+  useLayoutEffect(() => {
+    const measure = () => {
+      const tools = document.querySelector<HTMLElement>('main > .tools')
+      if (!tools) return
+      const above = tools.getBoundingClientRect().bottom + window.scrollY
+      document.documentElement.style.setProperty('--above-stage', `${Math.round(above)}px`)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  })
+
   const reminder = backupReminder(backupStatus, now, needsIosHint())
+  const steps =
+    tab === 'card' && card
+      ? cardSteps({
+          hasFields: hasFieldText(card.elements.flatMap((e) => (e.kind === 'text' ? [e.text] : []))),
+          itemCount: items.length,
+          overflowCount: items.filter((it) => card.elements.some((e) => e.kind === 'text' && textOverflows(e, it))).length,
+        })
+      : null
 
   if (!docs || !doc) return <div className="loading">読み込み中…</div>
 
@@ -399,7 +424,8 @@ export default function App() {
           <button type="button" onClick={() => edit(undo)} disabled={h.past.length === 0} title="元に戻す (Ctrl+Z)">元に戻す</button>
           <button type="button" onClick={() => edit(redo)} disabled={h.future.length === 0} title="やり直し (Ctrl+Shift+Z)">やり直し</button>
           <button type="button" className="primary" onClick={runExport} disabled={busy}>
-            {busy ? '書き出し中…' : `${tabInfo.output}を書き出す`}
+            {/* スマホでは上部が窮屈になるので「書き出す」だけにする（何を書き出すかは確認画面で分かる） */}
+            {busy ? '書き出し中…' : <><span className="wide-only">{tabInfo.output}を</span>書き出す</>}
           </button>
         </div>
       </header>
@@ -480,6 +506,8 @@ export default function App() {
           }}
         />
       )}
+
+      {steps && <CardSteps steps={steps} busy={busy} onAddItem={addItem} onExport={() => void runExport()} />}
 
       <main>
         <aside className="tools" aria-label="要素を追加">

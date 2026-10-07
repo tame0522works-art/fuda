@@ -294,6 +294,23 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    name: '値札タブでは手順が出て、次にやることが分かり、手順から品目を足して書き出せる',
+    async run(ui) {
+      await ui.open()
+      assert.equal(await ui.page.run(`return !!document.querySelector('.card-steps')`), false, 'お品書きでは手順を出さない')
+      await ui.button('値札')
+      const steps = () => ui.page.run<string[]>(`return [...document.querySelectorAll('.card-steps li')].map(l => [...l.classList].join(' ') + ':' + l.querySelector('.dim').textContent)`)
+      assert.deepEqual(await steps(), ['done:差し込み欄あり', 'todo current:まだありません', 'todo:品目を入れると書き出せます'])
+      await ui.button('品目を追加', '.card-steps')
+      assert.equal(await ui.page.run(`return document.activeElement?.classList.contains('name')`), true, '足した品目の品名を入力できる')
+      assert.deepEqual(await steps(), ['done:差し込み欄あり', 'done:1 件', 'todo current:A4 に面付けした PDF を保存できます'])
+      await ui.button('書き出す', '.card-steps')
+      await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
+      await ui.button('保存する', 'dialog[open]')
+      assert.equal((await ui.download('.pdf')).subarray(0, 8).toString('latin1'), '%PDF-1.4')
+    },
+  },
+  {
     name: '値札: 品目を足すと面付けされ、長い品名には印が付き、PDF が保存される',
     async run(ui) {
       await ui.open()

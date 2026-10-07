@@ -18,10 +18,11 @@
     "check:backup": "tsx tools/check-backup.ts",
     "check:group": "tsx tools/check-group.ts",
     "check:reminder": "tsx tools/check-reminder.ts",
+    "check:steps": "tsx tools/check-steps.ts",
     "screenshots": "tsx tools/screenshots.ts",
     "e2e": "vite build --outDir dist-e2e --emptyOutDir && tsx tools/e2e.ts",
     "icons": "tsx tools/icons.ts",
-    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap && npm run check:doc && npm run check:backup && npm run check:group && npm run check:reminder"
+    "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap && npm run check:doc && npm run check:backup && npm run check:group && npm run check:reminder && npm run check:steps"
   },
   "dependencies": {
     "@fontsource/dela-gothic-one": "^5.3.0",

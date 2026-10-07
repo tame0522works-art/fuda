@@ -467,9 +467,9 @@ main {
     overflow: visible;
   }
   /* 入力欄などへ移ったときに、画面上部に残しているページの裏へ隠れない位置までスクロールさせる。
-     スクロールし始めのうちはページの上にボタン類（約 180px）が残っているので、その分も空ける */
+     スクロールし始めのうちはページの上にボタン類・知らせ・値札の手順が残っているので、その高さ（App が測って --above-stage に入れる）も空ける */
   .panel :is(input, select, textarea, button) {
-    scroll-margin-top: calc(55vh + 180px);
+    scroll-margin-top: calc(55vh + var(--above-stage, 240px) + 16px);
   }
 }
 
@@ -745,4 +745,66 @@ main {
 }
 .banner-actions button {
   padding: 4px 12px;
+}
+
+.card-steps {
+  list-style: none;
+  margin: 0;
+  padding: 8px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-edge);
+}
+.card-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  opacity: 0.75;
+}
+.card-steps li.current {
+  opacity: 1;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.card-steps li.done,
+.card-steps li.warn {
+  opacity: 1;
+}
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+}
+.card-steps li.done .step-no {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+}
+.card-steps li.warn .step-no {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #fff;
+}
+.step-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.step-text strong {
+  font-size: 13px;
+}
+.card-steps button {
+  padding: 3px 10px;
+  font-size: 12px;
 }
