@@ -7,3 +7,5 @@ dist
 .idea
 check-pdf.pdf
 bench-assets
+dist-e2e
+e2e-failures

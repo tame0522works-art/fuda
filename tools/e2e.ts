@@ -1,0 +1,370 @@
+// 画面操作のテスト。公開と同じ設定でビルドしたもの（CSP 入り）をローカルで配信し、
+// 本物のマウス・キーボード・タッチ・ファイル選択を送って、試用で見つかった不具合が戻っていないかを確かめる。
+// `npm run e2e` で実行する（先に dist-e2e へビルドしてから、このスクリプトが配信とブラウザを立ち上げる）。
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { toBackup } from '../src/backup.ts'
+import { starterDoc } from '../src/doc.ts'
+import { Browser, sleep, type Page, type Viewport } from './cdp.ts'
+
+const PORT = 4181
+const BASE = `http://127.0.0.1:${PORT}/`
+const DESKTOP: Viewport = { width: 1280, height: 800 }
+const PHONE: Viewport = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true, touch: true }
+const FAILURES = 'e2e-failures'
+
+// DevTools Protocol の修飾キー
+const ALT = 1
+const CTRL = 2
+const SHIFT = 8
+
+const KEYS: Record<string, { code: string; vk: number }> = {
+  a: { code: 'KeyA', vk: 65 }, z: { code: 'KeyZ', vk: 90 },
+  Escape: { code: 'Escape', vk: 27 }, Delete: { code: 'Delete', vk: 46 }, Enter: { code: 'Enter', vk: 13 },
+}
+
+/** ページの操作。座標は用紙の単位（お品書きなら px）で指定し、画面上の位置に直して本物の入力を送る */
+class Ui {
+  downloads: string
+  constructor(readonly page: Page, downloads: string) {
+    this.downloads = downloads
+    // 復元などの確認（confirm）は「はい」で進める
+    page.on('Page.javascriptDialogOpening', () => void page.send('Page.handleJavaScriptDialog', { accept: true }))
+  }
+
+  async open() {
+    await this.page.goto(BASE)
+    await this.page.waitFor(`document.querySelector('.paper canvas')`, 'エディタの表示')
+    await this.page.run(`await document.fonts.ready; await new Promise(r => setTimeout(r, 600))`)
+  }
+
+  /** 用紙の座標 → 画面上の座標 */
+  async at(x: number, y: number): Promise<{ x: number; y: number }> {
+    return this.page.run(`
+      const r = document.querySelector('.paper').getBoundingClientRect();
+      const [w] = document.querySelector('.inspector .row .dim').textContent.split('×').map(Number.parseFloat);
+      const k = r.width / w;
+      return { x: r.left + ${x} * k, y: r.top + ${y} * k };
+    `)
+  }
+
+  private mouse(type: string, p: { x: number; y: number }, extra: object = {}) {
+    return this.page.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', ...extra })
+  }
+
+  async clickScreen(p: { x: number; y: number }, opts: { count?: number; modifiers?: number } = {}) {
+    const modifiers = opts.modifiers ?? 0
+    await this.mouse('mouseMoved', p, { button: 'none', modifiers })
+    for (let c = 1; c <= (opts.count ?? 1); c++) {
+      await this.mouse('mousePressed', p, { clickCount: c, modifiers, buttons: 1 })
+      await this.mouse('mouseReleased', p, { clickCount: c, modifiers })
+    }
+    await sleep(200)
+  }
+
+  async click(x: number, y: number, opts: { count?: number; modifiers?: number } = {}) {
+    await this.clickScreen(await this.at(x, y), opts)
+  }
+
+  async drag(from: [number, number], to: [number, number], modifiers = 0) {
+    const a = await this.at(...from)
+    const b = await this.at(...to)
+    await this.mouse('mouseMoved', a, { button: 'none', modifiers })
+    await this.mouse('mousePressed', a, { clickCount: 1, modifiers, buttons: 1 })
+    for (let i = 1; i <= 8; i++) {
+      await this.mouse('mouseMoved', { x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 }, { modifiers, buttons: 1 })
+    }
+    await this.mouse('mouseReleased', b, { clickCount: 1, modifiers })
+    await sleep(200)
+  }
+
+  async tap(x: number, y: number) {
+    const p = await this.at(x, y)
+    await this.page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] })
+    await this.page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await sleep(300)
+  }
+
+  async key(key: string, modifiers = 0) {
+    const k = KEYS[key]
+    await this.page.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers })
+    await this.page.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers })
+    await sleep(200)
+  }
+
+  async type(text: string) {
+    await this.page.send('Input.insertText', { text })
+    await sleep(200)
+  }
+
+  /** 見えているボタンを文字で探して、本物のクリックを送る */
+  async button(label: string, scope = 'body') {
+    const p = await this.page.run<{ x: number; y: number } | null>(`
+      const b = [...document.querySelector(${JSON.stringify(scope)}).querySelectorAll('button, summary')]
+        .find(e => e.textContent.trim() === ${JSON.stringify(label)} && e.getClientRects().length > 0 && !e.disabled);
+      if (!b) return null;
+      const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    `)
+    assert.ok(p, `ボタン「${label}」が見つからない`)
+    await this.clickScreen(p)
+  }
+
+  text(selector: string) {
+    return this.page.run<string | null>(`return document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`)
+  }
+
+  /** 右パネルの、ラベルが label の入力欄の値 */
+  field(label: string) {
+    return this.page.run<string | null>(`
+      const f = [...document.querySelectorAll('.inspector .field')].find(f => f.querySelector('span')?.textContent.startsWith(${JSON.stringify(label)}));
+      return f?.querySelector('input, select, textarea')?.value ?? null;
+    `)
+  }
+
+  async heading() {
+    return this.page.run<string | null>(`return document.querySelector('.inspector section:nth-child(2) h2')?.textContent ?? null`)
+  }
+
+  async setFiles(selector: string, files: string[]) {
+    const { result } = await this.page.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(selector)})` })
+    await this.page.send('DOM.setFileInputFiles', { files, objectId: result.objectId })
+    await sleep(300)
+  }
+
+  async chooseOption(selector: string, includes: string) {
+    await this.page.run(`
+      const s = document.querySelector(${JSON.stringify(selector)});
+      const i = [...s.options].findIndex(o => o.textContent.includes(${JSON.stringify(includes)}));
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, String(i));
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    `)
+    await sleep(300)
+  }
+
+  /** ダウンロードし終えたファイルを待つ（書きかけの .crdownload は数えない） */
+  async download(ext: string): Promise<Buffer> {
+    const until = Date.now() + 15_000
+    while (Date.now() < until) {
+      const done = readdirSync(this.downloads).find((f) => f.endsWith(ext))
+      if (done) return readFileSync(join(this.downloads, done))
+      await sleep(200)
+    }
+    throw new Error(`${ext} のダウンロードが見つからない`)
+  }
+}
+
+const near = (actual: number, expected: number, tol: number, msg: string) =>
+  assert.ok(Math.abs(actual - expected) <= tol, `${msg}: ${actual}（期待 ${expected} ± ${tol}）`)
+
+type Scenario = { name: string; viewport?: Viewport; run: (ui: Ui) => Promise<void> }
+
+const scenarios: Scenario[] = [
+  {
+    name: '起動すると見本が出て、外部への送信は CSP で止まる',
+    async run(ui) {
+      const errors: string[] = []
+      ui.page.on('Runtime.exceptionThrown', (p) => errors.push(p.exceptionDetails.text))
+      await ui.open()
+      assert.match((await ui.page.run<string>(`return document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? ''`)), /connect-src 'none'/)
+      const sent = await ui.page.run<string>(`return fetch('https://example.com/collect', { method: 'POST', body: 'x' }).then(() => 'sent', () => 'blocked')`)
+      assert.equal(sent, 'blocked', '外部への送信が拒否される')
+      await ui.key('a', CTRL)
+      assert.equal(await ui.heading(), '8 個を選択中')
+      assert.deepEqual(errors, [], 'ページ内でエラーが出ない')
+    },
+  },
+  {
+    name: 'クリックで選び、ドラッグで動かし、元に戻すで戻る',
+    async run(ui) {
+      await ui.open()
+      await ui.click(540, 500)
+      assert.deepEqual([await ui.field('左'), await ui.field('上')], ['120', '400'])
+      // Alt を押しながら動かすと吸着しない
+      await ui.drag([540, 500], [640, 560], ALT)
+      near(Number(await ui.field('左')), 220, 3, '右へ動く')
+      near(Number(await ui.field('上')), 460, 3, '下へ動く')
+      await ui.key('z', CTRL)
+      assert.deepEqual([await ui.field('左'), await ui.field('上')], ['120', '400'], 'ドラッグ1回が元に戻す1回で戻る')
+    },
+  },
+  {
+    name: '外枠の内側の余白から囲むと、中の要素だけをまとめて選べる',
+    async run(ui) {
+      await ui.open()
+      await ui.click(540, 1110)
+      assert.equal(await ui.page.run(`return document.querySelectorAll('.selection').length`), 0, '外枠の内側の余白では何も選ばれない')
+      await ui.drag([100, 380], [990, 900])
+      assert.equal(await ui.heading(), '2 個を選択中')
+      await ui.click(540, 43, { modifiers: SHIFT })
+      assert.equal(await ui.heading(), '3 個を選択中', 'Shift+クリックで外枠（線の上）を足せる')
+    },
+  },
+  {
+    name: 'ダブルクリックでその場で書き換え、元に戻すは1回で済む',
+    async run(ui) {
+      await ui.open()
+      await ui.click(540, 155, { count: 2 })
+      assert.equal(await ui.page.run(`return document.activeElement?.className`), 'text-edit', '文字の上に入力欄が開く')
+      await ui.type('（新刊あり）')
+      await ui.key('Escape')
+      assert.equal(await ui.page.run(`return document.querySelector('.inspector textarea')?.value`), 'お品書き（新刊あり）')
+      await ui.key('z', CTRL)
+      assert.equal(await ui.page.run(`return document.querySelector('.inspector textarea')?.value`), 'お品書き')
+    },
+  },
+  {
+    name: '縦長から「横長 1920×1080」に変えると横長になり、外枠は新しい用紙いっぱいに広がる',
+    async run(ui) {
+      await ui.open()
+      await ui.chooseOption('.inspector select', '1920')
+      assert.equal(await ui.text('.inspector .row .dim'), '1920×1080 px')
+      await ui.click(960, 33)
+      assert.equal(await ui.heading(), '図形')
+      assert.deepEqual([await ui.field('幅'), await ui.field('高さ')], ['1856', '1016'])
+    },
+  },
+  {
+    name: 'PNG は確認画面を出してから保存し、ファイルとして保存される',
+    async run(ui) {
+      await ui.open()
+      await ui.key('a', CTRL)
+      await ui.button('PNG 画像を書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open]')`, '確認画面')
+      assert.match((await ui.text('dialog[open] header .dim'))!, /1080×1350 px/)
+      // 確認画面の間は、裏のページのショートカットが効かない
+      await ui.key('Delete')
+      await ui.button('閉じる', 'dialog[open]')
+      assert.equal(await ui.page.run(`return !!document.querySelector('dialog')`), false)
+      assert.equal(await ui.heading(), '8 個を選択中', '確認画面で Delete を押しても要素は消えない')
+      await ui.button('PNG 画像を書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open]')`, '確認画面')
+      await ui.button('保存する', 'dialog[open]')
+      const png = await ui.download('.png')
+      assert.equal(png.subarray(1, 4).toString('latin1'), 'PNG')
+      assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1080, 1350], '保存した PNG の大きさ')
+    },
+  },
+  {
+    name: '値札: 品目を足すと面付けされ、長い品名には印が付き、PDF が保存される',
+    async run(ui) {
+      await ui.open()
+      await ui.button('値札')
+      await ui.button('品目を追加')
+      await ui.button('品目を追加')
+      const name = await ui.page.run<{ x: number; y: number }>(`
+        const r = document.querySelectorAll('.item-list .name')[1].getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 };
+      `)
+      await ui.clickScreen(name)
+      await ui.key('a', CTRL)
+      await ui.type('既刊 シチュエーションボイス台本集 Vol.2（特典ペーパー付き・数量限定）')
+      await ui.page.waitFor(`document.querySelector('.item-list .warn')`, 'はみ出しの印')
+      await ui.button('A4 に面付けした PDFを書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
+      assert.match((await ui.text('dialog[open] header .dim'))!, /× 1ページ/)
+      await ui.button('保存する', 'dialog[open]')
+      const pdf = await ui.download('.pdf')
+      assert.equal(pdf.subarray(0, 8).toString('latin1'), '%PDF-1.4')
+      assert.match(pdf.toString('latin1'), /\/Count 1 /)
+    },
+  },
+  {
+    name: 'バックアップのファイルから復元でき、書き出したバックアップにも反映される',
+    async run(ui) {
+      await ui.open()
+      const menu = starterDoc('menu')
+      const docs = {
+        menu: { ...menu, elements: menu.elements.map((e) => (e.kind === 'text' && e.text === 'お品書き' ? { ...e, text: 'E2E のお品書き' } : e)) },
+        pop: starterDoc('pop'),
+        card: starterDoc('card'),
+      }
+      const file = join(ui.downloads, 'restore-me.json')
+      writeFileSync(file, JSON.stringify(await toBackup(docs, [{ id: 'i', name: '新刊', price: 700 }], new Map())))
+      await ui.setFiles('header input[type=file]', [file])
+      await ui.page.waitFor(`document.querySelector('.banner.ok')?.textContent.includes('バックアップから戻しました')`, '復元の知らせ')
+      await ui.click(540, 155)
+      assert.equal(await ui.page.run(`return document.querySelector('.inspector textarea')?.value`), 'E2E のお品書き')
+      rmSync(file)
+      await ui.button('バックアップ')
+      const saved = JSON.parse((await ui.download('.json')).toString('utf8'))
+      assert.equal(saved.app, 'fuda')
+      assert.ok(saved.docs.menu.elements.some((e: { text?: string }) => e.text === 'E2E のお品書き'))
+      assert.deepEqual(saved.items.map((i: { name: string }) => i.name), ['新刊'])
+    },
+  },
+  {
+    name: 'スマホ幅では画面からはみ出さず、タップで選べる',
+    viewport: PHONE,
+    async run(ui) {
+      await ui.open()
+      const layout = await ui.page.run<{ docW: number; innerW: number; more: boolean; hint: boolean }>(`
+        return {
+          docW: document.documentElement.scrollWidth, innerW: innerWidth,
+          more: getComputedStyle(document.querySelector('.more')).display !== 'none',
+          hint: getComputedStyle(document.querySelector('.tool-hint')).display !== 'none',
+        };
+      `)
+      assert.equal(layout.docW, layout.innerW, '横にはみ出さない')
+      assert.equal(layout.more, true, 'バックアップ・復元は「その他」にまとまる')
+      assert.equal(layout.hint, false, 'ドラッグで画像を入れる案内は出さない')
+      await ui.tap(540, 500)
+      assert.ok(await ui.page.run(`return !!document.querySelector('.quick-actions')`), 'タップで選ぶと、そばにボタンが出る')
+      const docW = await ui.page.run<number>(`return document.documentElement.scrollWidth`)
+      assert.equal(docW, layout.innerW, '選んで右パネルが変わっても、横にはみ出さない')
+    },
+  },
+]
+
+async function startServer() {
+  // vite の preview で dist-e2e を配信する（npx を介さず、どの OS でも同じ起動のしかたにする）
+  const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--outDir', 'dist-e2e', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore' })
+  for (let i = 0; i < 100; i++) {
+    if (await fetch(BASE).then((r) => r.ok, () => false)) return server
+    await sleep(100)
+  }
+  server.kill()
+  throw new Error('テスト用のサーバーが起動しませんでした')
+}
+
+async function main() {
+  const only = process.argv[2]
+  const server = await startServer()
+  const browser = await Browser.launch(9334)
+  let failed = 0
+  try {
+    for (const s of scenarios.filter((s) => !only || s.name.includes(only))) {
+      const downloads = mkdtempSync(join(tmpdir(), 'fuda-e2e-dl-'))
+      const page = await browser.newPage(s.viewport ?? DESKTOP, { downloadPath: downloads })
+      const ui = new Ui(page, downloads)
+      const t0 = Date.now()
+      try {
+        await s.run(ui)
+        console.log(`  ✓ ${s.name}（${((Date.now() - t0) / 1000).toFixed(1)}秒）`)
+      } catch (e) {
+        failed++
+        console.log(`  ✗ ${s.name}\n      ${e instanceof Error ? e.message : String(e)}`)
+        mkdirSync(FAILURES, { recursive: true })
+        const { data } = await page.send('Page.captureScreenshot', { format: 'png' }).catch(() => ({ data: '' }))
+        if (data) writeFileSync(join(FAILURES, `${scenarios.indexOf(s) + 1}.png`), Buffer.from(data, 'base64'))
+      } finally {
+        await page.send('Page.close').catch(() => {})
+        rmSync(downloads, { recursive: true, force: true })
+      }
+    }
+  } finally {
+    await browser.close()
+    server.kill()
+  }
+  if (failed > 0) {
+    console.log(`\n${failed} 件失敗しました（失敗時の画面: ${FAILURES}/）`)
+    process.exit(1)
+  }
+  console.log('\ne2e OK')
+}
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e)
+  process.exit(1)
+})

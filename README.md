@@ -122,11 +122,16 @@ npm run dev
 
 ```bash
 npm run check         # 折り返し・面付け・PDF の構造・tsuri の読み込み・吸着・要素を足す位置・用紙の向き・バックアップの往復・複数選択の操作を検証
+npm run e2e           # 画面操作のテスト（公開と同じ設定でビルドし、ヘッドレスの Edge / Chrome で操作する）
 npm run build
 npm run screenshots   # README の画像を撮り直す（開発サーバーを起動しておく）
 ```
 
-`main` に push すると、GitHub Actions が lint・検証・ビルドを通したうえで GitHub Pages に公開する（[`.github/workflows/pages.yml`](.github/workflows/pages.yml)）。
+`npm run e2e` は [`tools/e2e.ts`](tools/e2e.ts)。CSP 入りのビルドをローカルで配信し、DevTools Protocol で本物のマウス・キーボード・タッチ・ファイル選択を送る。
+試用で見つかった不具合を中心に、選択とドラッグと元に戻す、外枠の内側からの囲み選択、その場での書き換え、用紙の向き、確認画面中のショートカット停止、PNG・PDF・バックアップが実際にファイルとして保存されること、スマホ幅ではみ出さないことを確かめる（9件、約15秒）。
+直した不具合（「横長」が縦長になる、確認画面中の Delete で要素が消える）をわざと戻すと、対応するテストが失敗することも確かめた。
+
+`main` に push すると、GitHub Actions が lint・検証・画面操作のテスト・ビルドを通したうえで GitHub Pages に公開する（[`.github/workflows/pages.yml`](.github/workflows/pages.yml)）。
 
 README の画像は [`tools/screenshots.ts`](tools/screenshots.ts) で撮っている。Edge（なければ Chrome）を画面なしで起動し、Chrome DevTools Protocol で見本のデザインを入れて要素を選び、確認画面を開くまでを毎回同じ手順で行う。普段のブラウザのデータには触れない（一時プロファイルを使い、終わったら消す）。
 見本のお品書きのサークル名・スペース番号は架空のもの。新刊は作者の台本「眠れない夏の夜」。表紙の絵はスクリプトの中で描いている。

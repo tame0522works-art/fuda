@@ -1,23 +1,14 @@
 // README に載せる画面の画像を撮る。開発サーバーを起動した状態で `npm run screenshots` を実行する。
 // Edge（なければ Chrome）を画面なしで起動し、Chrome DevTools Protocol で操作する。
 // 見本のデザインを入れ、要素を選び、確認画面を開くまでを毎回同じ手順で行うので、アプリを直したら同じ画像を撮り直せる。
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newImage, newRect, newText, starterDoc, type Doc, type El, type TextEl } from '../src/doc.ts'
 import type { Item } from '../src/fields.ts'
+import { Browser, sleep, type Page } from './cdp.ts'
 
 const BASE = process.argv[2] ?? 'http://localhost:5179/'
 const OUT = 'docs/images'
-const PORT = 9333
-
-const BROWSERS = [
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  '/usr/bin/google-chrome',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-]
 
 // ---- 見本のデザイン（サークル名などは架空。新刊は作者の台本「眠れない夏の夜」） ----
 
@@ -80,75 +71,23 @@ const COVER_SCRIPT = `
   const cover = await c.convertToBlob({ type: 'image/png' });
 `
 
-// ---- Chrome DevTools Protocol ----
+// ---- 撮影 ----
 
-class Cdp {
-  private id = 0
-  private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
-  private constructor(private ws: WebSocket, public sessionId?: string) {
-    ws.addEventListener('message', (ev) => {
-      const msg = JSON.parse(String(ev.data))
-      const p = msg.id !== undefined && this.pending.get(msg.id)
-      if (!p) return
-      this.pending.delete(msg.id)
-      if (msg.error) p.reject(new Error(`${msg.error.message} (${msg.error.code})`))
-      else p.resolve(msg.result)
-    })
-  }
-
-  static async connect(url: string) {
-    const ws = new WebSocket(url)
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve, { once: true })
-      ws.addEventListener('error', reject, { once: true })
-    })
-    return new Cdp(ws)
-  }
-
-  send(method: string, params: object = {}): Promise<any> {
-    const id = ++this.id
-    this.ws.send(JSON.stringify({ id, method, params, sessionId: this.sessionId }))
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }))
-  }
-
-  /** ページの中で async 関数の本体を実行し、戻り値を受け取る */
-  async run<T = unknown>(body: string): Promise<T> {
-    const res = await this.send('Runtime.evaluate', { expression: `(async () => { ${body} })()`, awaitPromise: true, returnByValue: true })
-    if (res.exceptionDetails) throw new Error(`ページ内でエラー: ${res.exceptionDetails.exception?.description ?? res.exceptionDetails.text}`)
-    return res.result.value as T
-  }
-
-  close() {
-    this.ws.close()
-  }
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-async function waitFor(cdp: Cdp, expr: string, label: string, timeout = 15_000) {
-  const until = Date.now() + timeout
-  while (Date.now() < until) {
-    if (await cdp.run<boolean>(`return !!(${expr})`).catch(() => false)) return
-    await sleep(200)
-  }
-  throw new Error(`${label} を待ちきれませんでした`)
-}
-
-async function shoot(cdp: Cdp, name: string) {
+async function shoot(cdp: Page, name: string) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(join(OUT, name), Buffer.from(data, 'base64'))
   console.log(`  ${OUT}/${name}`)
 }
 
-async function saveDataUrl(cdp: Cdp, body: string, name: string) {
+async function saveDataUrl(cdp: Page, body: string, name: string) {
   const b64 = await cdp.run<string>(body)
   writeFileSync(join(OUT, name), Buffer.from(b64, 'base64'))
   console.log(`  ${OUT}/${name}`)
 }
 
 /** 開いたばかりのページで、書体の読み込みと描き直しが落ち着くのを待つ */
-async function settle(cdp: Cdp) {
-  await waitFor(cdp, `document.querySelector('.paper canvas')`, 'エディタの表示')
+async function settle(cdp: Page) {
+  await cdp.waitFor(`document.querySelector('.paper canvas')`, 'エディタの表示')
   await cdp.run(`await document.fonts.ready; await new Promise(r => setTimeout(r, 1500)); await document.fonts.ready`)
 }
 
@@ -166,41 +105,18 @@ const TAB = (label: string) => `
 `
 
 async function main() {
-  const exe = BROWSERS.find((p) => existsSync(p))
-  if (!exe) throw new Error('Edge か Chrome が見つかりません')
   mkdirSync(OUT, { recursive: true })
-  const profile = mkdtempSync(join(tmpdir(), 'fuda-shots-'))
-  const browser = spawn(exe, [
-    '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank',
-  ], { stdio: 'ignore' })
-
-  let cdp: Cdp | undefined
+  // このブラウザ専用の一時プロファイルを使うので、普段のデータには触れない
+  const browser = await Browser.launch()
   try {
-    let wsUrl = ''
-    for (let i = 0; i < 50 && !wsUrl; i++) {
-      wsUrl = await fetch(`http://127.0.0.1:${PORT}/json/version`).then((r) => r.json()).then((j) => j.webSocketDebuggerUrl).catch(() => '')
-      if (!wsUrl) await sleep(200)
-    }
-    if (!wsUrl) throw new Error('ブラウザに接続できませんでした')
-    cdp = await Cdp.connect(wsUrl)
-    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' })
-    const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true })
-    cdp.sessionId = sessionId
-    await cdp.send('Page.enable')
-    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
+    const cdp = await browser.newPage({ width: 1280, height: 800 })
 
-    const desktop = async () => {
-      await cdp!.send('Emulation.setTouchEmulationEnabled', { enabled: false })
-      await cdp!.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
-    }
     const open = async () => {
-      await cdp!.send('Page.navigate', { url: BASE })
-      await settle(cdp!)
+      await cdp.send('Page.navigate', { url: BASE })
+      await settle(cdp)
     }
 
-    // 見本のデザインを入れる（このブラウザ専用の一時プロファイルなので、普段のデータには触れない）
-    await desktop()
+    // 見本のデザインを入れる
     await open()
     await cdp.run(`
       ${COVER_SCRIPT}
@@ -232,7 +148,7 @@ async function main() {
       HTMLAnchorElement.prototype.click = function () {};
       [...document.querySelectorAll('header button')].find(b => b.textContent.includes('書き出す')).click();
     `)
-    await waitFor(cdp, `document.querySelector('dialog[open] canvas')`, '確認画面')
+    await cdp.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
     await sleep(500)
     await shoot(cdp, 'export-preview.png')
 
@@ -252,24 +168,7 @@ async function main() {
     await cdp.run(`${TAB('お品書き')} ${TAP(780, 445, 1080, 'touch')}`)
     await shoot(cdp, 'mobile.png')
   } finally {
-    // Windows の Edge は起動用のプロセスと本体が別なので、起動用を kill しても本体が残る。
-    // DevTools Protocol で本体に閉じるよう頼み、プロファイルを手放すまで待ってから消す
-    if (cdp) {
-      cdp.sessionId = undefined
-      await Promise.race([cdp.send('Browser.close').catch(() => {}), sleep(3000)])
-      cdp.close()
-    }
-    browser.kill()
-    let removed = false
-    for (let i = 0; i < 20 && !removed; i++) {
-      try {
-        rmSync(profile, { recursive: true, force: true })
-        removed = true
-      } catch {
-        await sleep(500)
-      }
-    }
-    if (!removed) console.warn(`一時プロファイルを消せませんでした（残しても問題ありません）: ${profile}`)
+    await browser.close()
   }
 }
 
