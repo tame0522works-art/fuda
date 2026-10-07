@@ -17,6 +17,7 @@
     "check:doc": "tsx tools/check-doc.ts",
     "check:backup": "tsx tools/check-backup.ts",
     "check:group": "tsx tools/check-group.ts",
+    "screenshots": "tsx tools/screenshots.ts",
     "check": "npm run check:wrap && npm run check:sheet && npm run check:pdf && npm run check:tsuri && npm run check:snap && npm run check:doc && npm run check:backup && npm run check:group"
   },
   "dependencies": {
