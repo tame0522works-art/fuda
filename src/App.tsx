@@ -297,9 +297,9 @@ export default function App() {
         setPreview({ kind: 'pdf', ...pdf, name: `pop-${stamp}.pdf` })
       }
       if (tab === 'card') {
-        if (items.length === 0) throw new Error('値札にする品目がありません。右の「品目」から追加してください')
+        // 品目がまだなくても、どんな値札になるかは確かめられるよう、差し込み欄のまま1面だけ見せる（保存はさせない）
         const pdf = await exportCardsPdf(docs.card.present, items, images, { preview: true })
-        setPreview({ kind: 'pdf', ...pdf, name: `nefuda-${stamp}.pdf` })
+        setPreview({ kind: 'pdf', ...pdf, name: `nefuda-${stamp}.pdf`, sampleOnly: items.length === 0 })
       }
     } catch (e) {
       setError((e as Error).message || '書き出しに失敗しました')

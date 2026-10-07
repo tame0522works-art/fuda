@@ -274,6 +274,21 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    name: '値札: 品目がまだなくても、差し込み欄のままプレビューでき、保存はさせない',
+    async run(ui) {
+      await ui.open()
+      await ui.button('値札')
+      await ui.button('A4 に面付けした PDFを書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
+      assert.match((await ui.text('dialog[open] .msg'))!, /品目がまだないので、差し込み欄のまま/)
+      const buttons = await ui.page.run<string[]>(`return [...document.querySelectorAll('dialog[open] footer button')].map(b => b.textContent)`)
+      assert.deepEqual(buttons, ['閉じる'], '見本のときは保存・共有を出さない')
+      assert.equal(await ui.page.run(`return document.activeElement?.textContent`), '閉じる')
+      await ui.key('Escape')
+      assert.equal(await ui.page.run(`return !!document.querySelector('dialog')`), false)
+    },
+  },
+  {
     name: '値札: 品目を足すと面付けされ、長い品名には印が付き、PDF が保存される',
     async run(ui) {
       await ui.open()

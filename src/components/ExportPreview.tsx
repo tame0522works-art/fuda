@@ -3,7 +3,8 @@ import type { PreviewPage } from '../output'
 
 export type ExportPreviewData =
   | { kind: 'png'; blob: Blob; name: string; bitmap: ImageBitmap }
-  | { kind: 'pdf'; blob: Blob; name: string; pages: PreviewPage[] }
+  /** sampleOnly: 値札の品目がまだなく、差し込み欄のまま見せているだけ。保存・共有はさせない */
+  | { kind: 'pdf'; blob: Blob; name: string; pages: PreviewPage[]; sampleOnly?: boolean }
 
 type Props = {
   data: ExportPreviewData
@@ -40,13 +41,15 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
   const [shareFile] = useState(() => shareableFile(data))
   const [shareError, setShareError] = useState<string | null>(null)
   const saveRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const sampleOnly = data.kind === 'pdf' && data.sampleOnly === true
   const [zoom, setZoom] = useState<'fit' | 'real'>('fit')
 
   useLayoutEffect(() => {
     // showModal で開くと、背後の操作を止め、フォーカスもダイアログの中に留まる
     dialogRef.current!.showModal()
-    // 開いた直後は「保存する」にフォーカスを置き、Enter でそのまま保存できるようにする
-    saveRef.current!.focus()
+    // 開いた直後は「保存する」にフォーカスを置き、Enter でそのまま保存できるようにする（保存できない見本のときは「閉じる」）
+    ;(saveRef.current ?? closeRef.current)?.focus()
   }, [])
 
   const realLabel = data.kind === 'png' ? 'スマホの画面幅' : '印刷したときの大きさ'
@@ -103,9 +106,12 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
         </p>
       )}
       {shareError && <p className="msg error">{shareError}</p>}
+      {sampleOnly && (
+        <p className="msg">品目がまだないので、差し込み欄のまま1面だけ表示しています。右の「品目」から追加すると、品目の数だけ並べて保存できます。</p>
+      )}
       <footer>
-        <button type="button" onClick={onClose}>閉じる</button>
-        {shareFile && (
+        <button type="button" ref={closeRef} onClick={onClose}>閉じる</button>
+        {shareFile && !sampleOnly && (
           <button
             type="button"
             onClick={() =>
@@ -118,7 +124,7 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
             共有
           </button>
         )}
-        <button type="button" className="primary" ref={saveRef} onClick={onSave}>保存する</button>
+        {!sampleOnly && <button type="button" className="primary" ref={saveRef} onClick={onSave}>保存する</button>}
       </footer>
     </dialog>
   )
