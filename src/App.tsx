@@ -140,10 +140,18 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [menu, pop, card, updateBackupStatus])
 
+  const [focusItemId, setFocusItemId] = useState<string | null>(null)
+
   const updateItems = (next: Item[]) => {
     setItems(next)
     updateBackupStatus((s) => markEdited(s, Date.now()))
     db.saveItems(next).catch(() => setError('品目の保存に失敗しました'))
+  }
+
+  const addItem = () => {
+    const item = { id: uid(), name: '新しい品目', price: 500 }
+    updateItems([...items, item])
+    setFocusItemId(item.id)
   }
 
   const edit = useCallback(
@@ -462,6 +470,12 @@ export default function App() {
             releasePreview(preview)
             setPreview(null)
           }}
+          onAddItem={() => {
+            releasePreview(preview)
+            setPreview(null)
+            setTab('card')
+            addItem()
+          }}
         />
       )}
 
@@ -538,7 +552,7 @@ export default function App() {
 
         <aside className="panel">
           {tab === 'card' && (
-            <ItemsPanel card={doc} items={items} images={images} previewId={previewId} onPreview={setPreviewId} onItems={updateItems} fontTick={fontTick} />
+            <ItemsPanel card={doc} items={items} images={images} previewId={previewId} onPreview={setPreviewId} onItems={updateItems} onAdd={addItem} focusId={focusItemId} fontTick={fontTick} />
           )}
           <Inspector
             tab={tab}

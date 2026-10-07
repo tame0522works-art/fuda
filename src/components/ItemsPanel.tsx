@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { uid, type Doc } from '../doc'
+import type { Doc } from '../doc'
 import type { Item } from '../fields'
 import { ensureFonts } from '../fonts'
 import { drawSheet, textOverflows, textSpecs, type Images } from '../render'
@@ -13,10 +13,22 @@ type Props = {
   previewId: string | null
   onPreview: (id: string | null) => void
   onItems: (items: Item[]) => void
+  /** 品目を1件足し、その品名の入力欄へ移る */
+  onAdd: () => void
+  /** 足したばかりで、入力欄へ移りたい品目 */
+  focusId: string | null
   fontTick: number
 }
 
-export default function ItemsPanel({ card, items, images, previewId, onPreview, onItems, fontTick }: Props) {
+export default function ItemsPanel({ card, items, images, previewId, onPreview, onItems, onAdd, focusId, fontTick }: Props) {
+  // 足したばかりの品目の品名を選んだ状態にして、すぐ打ち替えられるようにする
+  useEffect(() => {
+    if (!focusId) return
+    const input = document.querySelector<HTMLInputElement>(`[data-item-id="${focusId}"] .name`)
+    input?.focus()
+    input?.select()
+  }, [focusId])
+
   const fileRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const layout = layoutSheet(card.page)
@@ -41,7 +53,7 @@ export default function ItemsPanel({ card, items, images, previewId, onPreview, 
       <h2>品目</h2>
       <div className="row wrap">
         <button type="button" onClick={() => fileRef.current!.click()}>tsuri から読み込む</button>
-        <button type="button" onClick={() => onItems([...items, { id: uid(), name: '新しい品目', price: 500 }])}>品目を追加</button>
+        <button type="button" onClick={onAdd}>品目を追加</button>
         <input
           ref={fileRef}
           type="file"
@@ -61,7 +73,7 @@ export default function ItemsPanel({ card, items, images, previewId, onPreview, 
       ) : (
         <ul className="item-list">
           {items.map((it) => (
-            <li key={it.id} className={it.id === previewId ? 'on' : ''}>
+            <li key={it.id} data-item-id={it.id} className={it.id === previewId ? 'on' : ''}>
               <input
                 type="radio"
                 name="preview"

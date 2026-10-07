@@ -10,6 +10,8 @@ type Props = {
   data: ExportPreviewData
   onSave: () => void
   onClose: () => void
+  /** 値札の品目がまだないときに、確認画面から品目を足しに行く */
+  onAddItem: () => void
 }
 
 /** SNS をスマホで見たときのおおよその表示幅（CSS px）。多くのスマホの画面幅が 360〜430 */
@@ -36,7 +38,7 @@ function shareableFile(data: ExportPreviewData): File | null {
   return typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] }) ? file : null
 }
 
-export default function ExportPreview({ data, onSave, onClose }: Props) {
+export default function ExportPreview({ data, onSave, onClose, onAddItem }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [shareFile] = useState(() => shareableFile(data))
   const [shareError, setShareError] = useState<string | null>(null)
@@ -107,7 +109,9 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
       )}
       {shareError && <p className="msg error">{shareError}</p>}
       {sampleOnly && (
-        <p className="msg">品目がまだないので、差し込み欄のまま1面だけ表示しています。右の「品目」から追加すると、品目の数だけ並べて保存できます。</p>
+        <p className="msg">
+          品目がまだないので、差し込み欄のまま1面だけ表示しています。品目を追加するか、「tsuri から読み込む」で取り込むと、品目の数だけ並べて保存できます。
+        </p>
       )}
       <footer>
         <button type="button" ref={closeRef} onClick={onClose}>閉じる</button>
@@ -124,6 +128,7 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
             共有
           </button>
         )}
+        {sampleOnly && <button type="button" className="primary" onClick={onAddItem}>品目を追加する</button>}
         {!sampleOnly && <button type="button" className="primary" ref={saveRef} onClick={onSave}>保存する</button>}
       </footer>
     </dialog>

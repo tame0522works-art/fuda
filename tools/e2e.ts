@@ -132,6 +132,9 @@ class Ui {
       const b = [...document.querySelector(${JSON.stringify(scope)}).querySelectorAll('button, summary')]
         .find(e => e.textContent.trim() === ${JSON.stringify(label)} && e.getClientRects().length > 0 && !e.disabled);
       if (!b) return null;
+      // 画面の外にあれば、利用者がスクロールするのと同じように見える所まで動かしてから押す
+      b.scrollIntoView({ block: 'nearest' });
+      await new Promise(r => setTimeout(r, 100));
       const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     `)
     assert.ok(p, `ボタン「${label}」が見つからない`)
@@ -282,10 +285,12 @@ const scenarios: Scenario[] = [
       await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
       assert.match((await ui.text('dialog[open] .msg'))!, /品目がまだないので、差し込み欄のまま/)
       const buttons = await ui.page.run<string[]>(`return [...document.querySelectorAll('dialog[open] footer button')].map(b => b.textContent)`)
-      assert.deepEqual(buttons, ['閉じる'], '見本のときは保存・共有を出さない')
+      assert.deepEqual(buttons, ['閉じる', '品目を追加する'], '見本のときは保存・共有を出さず、品目を足しに行ける')
       assert.equal(await ui.page.run(`return document.activeElement?.textContent`), '閉じる')
-      await ui.key('Escape')
-      assert.equal(await ui.page.run(`return !!document.querySelector('dialog')`), false)
+      await ui.button('品目を追加する', 'dialog[open]')
+      assert.equal(await ui.page.run(`return !!document.querySelector('dialog')`), false, '確認画面は閉じる')
+      assert.equal(await ui.page.run(`return document.querySelectorAll('.item-list li').length`), 1, '品目が1件増える')
+      assert.equal(await ui.page.run(`return document.activeElement?.classList.contains('name')`), true, '足した品目の品名を入力できる')
     },
   },
   {
@@ -309,6 +314,39 @@ const scenarios: Scenario[] = [
       const pdf = await ui.download('.pdf')
       assert.equal(pdf.subarray(0, 8).toString('latin1'), '%PDF-1.4')
       assert.match(pdf.toString('latin1'), /\/Count 1 /)
+    },
+  },
+  {
+    name: 'スマホ幅でも値札の品目を足せて、入力欄がページの裏に隠れず、A4 の PDF を保存できる',
+    viewport: PHONE,
+    async run(ui) {
+      await ui.open()
+      await ui.button('値札')
+      await ui.button('品目を追加')
+      const place = await ui.page.run<{ input: number; stage: number; vh: number }>(`
+        const i = document.activeElement.getBoundingClientRect(); const st = document.querySelector('.stage').getBoundingClientRect();
+        return { input: i.top, stage: st.bottom, vh: innerHeight };
+      `)
+      assert.equal(await ui.page.run(`return document.activeElement?.classList.contains('name')`), true, '足した品目の品名を入力できる')
+      assert.ok(place.input >= place.stage && place.input < place.vh, `入力欄が見えている（入力欄 ${place.input} / ページの下端 ${place.stage} / 画面 ${place.vh}）`)
+      // 入力欄が、画面上部に残しているページの裏に来るまでスクロールしてから、その入力欄へ移る（Tab で移ったときと同じ）
+      const hidden = await ui.page.run<{ before: number; after: number; stage: number }>(`
+        const input = document.querySelector('.item-list .name');
+        const stage = document.querySelector('.stage').getBoundingClientRect().bottom;
+        window.scrollBy(0, input.getBoundingClientRect().top - stage / 2);
+        await new Promise(r => setTimeout(r, 100));
+        const before = input.getBoundingClientRect().top;
+        input.blur(); input.focus();
+        await new Promise(r => setTimeout(r, 300));
+        return { before, after: input.getBoundingClientRect().top, stage };
+      `)
+      assert.ok(hidden.before < hidden.stage, `入力欄がページの裏に来ている（${hidden.before} < ${hidden.stage}）`)
+      assert.ok(hidden.after >= hidden.stage, `入力欄へ移ると、ページの裏から出てくる（${hidden.after} ≥ ${hidden.stage}）`)
+      await ui.button('A4 に面付けした PDFを書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
+      await ui.button('保存する', 'dialog[open]')
+      const pdf = await ui.download('.pdf')
+      assert.equal(pdf.subarray(0, 8).toString('latin1'), '%PDF-1.4')
     },
   },
   {

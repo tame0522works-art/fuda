@@ -466,6 +466,11 @@ main {
     border-left: none;
     overflow: visible;
   }
+  /* 入力欄などへ移ったときに、画面上部に残しているページの裏へ隠れない位置までスクロールさせる。
+     スクロールし始めのうちはページの上にボタン類（約 180px）が残っているので、その分も空ける */
+  .panel :is(input, select, textarea, button) {
+    scroll-margin-top: calc(55vh + 180px);
+  }
 }
 
 /* 指で操作する端末: つまみと当たり判定を大きくし、できない操作（ドラッグで画像を入れる）の案内は出さない */
