@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run check
+      # Ubuntu には日本語フォントがなく、文字が豆腐（□）の幅で折り返されてしまうので入れておく
+      - run: sudo apt-get update -q && sudo apt-get install -y -q fonts-noto-cjk
       # 公開と同じ設定でビルドしたものを、ヘッドレスの Chrome で操作して確かめる
       - run: npm run e2e
       - if: failure()
