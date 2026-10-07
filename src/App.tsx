@@ -408,6 +408,7 @@ export default function App() {
                 <button type="button" onClick={() => { moreRef.current!.open = false; void install() }}>アプリとして入れる</button>
               )}
               {needsIosHint() && <p className="dim">アプリとして入れるには、Safari の共有ボタンから「ホーム画面に追加」を選びます。</p>}
+              <p className="dim app-version">版 {__APP_VERSION__}</p>
             </div>
           </details>
           <input
@@ -537,6 +538,7 @@ export default function App() {
             }}
           />
           <p className="tool-hint">ページへドラッグでも入れられます</p>
+          <p className="app-version wide-only" title="不具合を伝えるときは、この版も添えてください">版 {__APP_VERSION__}</p>
           {tab === 'card' && (
             <>
               <hr />

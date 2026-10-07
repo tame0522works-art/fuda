@@ -202,6 +202,8 @@ const scenarios: Scenario[] = [
       assert.equal(sent, 'blocked', '外部への送信が拒否される')
       await ui.key('a', CTRL)
       assert.equal(await ui.heading(), '8 個を選択中')
+      const version = await ui.page.run<string | null>(`return [...document.querySelectorAll('.app-version')].find(e => e.getClientRects().length)?.textContent ?? null`)
+      assert.match(version ?? '', /^版 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/, '今の版が見える')
       assert.deepEqual(errors, [], 'ページ内でエラーが出ない')
     },
   },
@@ -405,6 +407,9 @@ const scenarios: Scenario[] = [
       assert.equal(layout.docW, layout.innerW, '横にはみ出さない')
       assert.equal(layout.more, true, 'バックアップ・復元は「その他」にまとまる')
       assert.equal(layout.hint, false, 'ドラッグで画像を入れる案内は出さない')
+      await ui.button('その他')
+      assert.match((await ui.page.run<string>(`return document.querySelector('.more .app-version')?.getClientRects().length ? document.querySelector('.more .app-version').textContent : ''`)), /^版 \d{4}-/, '「その他」の中に今の版が見える')
+      await ui.button('その他')
       await ui.tap(540, 500)
       assert.ok(await ui.page.run(`return !!document.querySelector('.quick-actions')`), 'タップで選ぶと、そばにボタンが出る')
       const docW = await ui.page.run<number>(`return document.documentElement.scrollWidth`)
