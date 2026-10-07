@@ -131,13 +131,31 @@ export function round(page: Page, v: number): number {
   return page.unit === 'px' ? Math.round(v) : Math.round(v * 10) / 10
 }
 
-/** 用紙を変えたとき、配置が崩れないよう全要素を新しい用紙に合わせて伸縮する */
+/** ページの幅（高さ）のこれ以上を占める要素は、外枠や帯とみなして新しい用紙いっぱいに伸ばす */
+const SPAN_RATIO = 0.9
+
+/**
+ * 用紙を変えたとき、今の配置の見た目を保ったまま新しい用紙に収める。
+ * 縦横を別々の倍率で伸ばすと、縦長→横長で図形が横に引き伸ばされ、文字だけ小さく間延びするので、
+ * 縦横を同じ倍率で拡大・縮小し、余った分は中央にそろえる。
+ * ただしページの幅（高さ）のほとんどを占める外枠や帯は、端からの余白の比率を保って新しい用紙いっぱいに伸ばす
+ * （同じ倍率だけだと、横長にしたとき外枠が中央に小さく残る）。
+ */
 export function resizePage(doc: Doc, page: Page): Doc {
-  const sx = page.width / doc.page.width
-  const sy = page.height / doc.page.height
-  const s = Math.min(sx, sy)
+  const old = doc.page
+  const s = Math.min(page.width / old.width, page.height / old.height)
+  const ox = (page.width - old.width * s) / 2
+  const oy = (page.height - old.height * s) / 2
+  const fit = (pos: number, len: number, oldSize: number, newSize: number, offset: number): [number, number] => {
+    if (len < oldSize * SPAN_RATIO) return [offset + pos * s, len * s]
+    const before = pos * s
+    const after = (oldSize - pos - len) * s
+    return [before, newSize - before - after]
+  }
   const elements = doc.elements.map((e): El => {
-    const box = { x: round(page, e.x * sx), y: round(page, e.y * sy), w: round(page, e.w * sx), h: round(page, e.h * sy) }
+    const [x, w] = fit(e.x, e.w, old.width, page.width, ox)
+    const [y, h] = fit(e.y, e.h, old.height, page.height, oy)
+    const box = { x: round(page, x), y: round(page, y), w: round(page, w), h: round(page, h) }
     switch (e.kind) {
       case 'text':
         return { ...e, ...box, size: round(page, e.size * s) }
