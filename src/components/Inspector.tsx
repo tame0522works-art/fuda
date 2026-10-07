@@ -286,7 +286,11 @@ function FontPicker({ value, onChange, localFonts, onLocalFonts }: {
       </select>
       <p className="font-sample" style={{ fontFamily: fontStack(value) }}>お品書き 新刊 700円 Aa</p>
       {!isFontAvailable(value) && (
-        <p className="msg error">この端末には「{fontLabel(value)}」がありません。代わりの書体で表示・書き出しされます。</p>
+        <p className="msg error">
+          {value.startsWith(LOCAL_PREFIX)
+            ? `この端末には「${fontLabel(value)}」がありません。代わりの書体で表示・書き出しされます。`
+            : `電波がないため「${fontLabel(value)}」を読み込めませんでした。代わりの書体で表示・書き出しされます。`}
+        </p>
       )}
       {canListLocalFonts() && localFonts.length === 0 && (
         <button type="button" className="chip" onClick={addLocal}>この PC の書体を一覧に追加</button>

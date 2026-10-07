@@ -51,12 +51,38 @@ export function fontLabel(key: string): string {
  */
 export async function ensureFonts(specs: readonly { font: string; weight: number; text: string }[]): Promise<boolean> {
   const pending = specs
-    .filter((s) => s.text !== '')
-    .map((s) => ({ font: `${s.weight} 16px ${fontStack(s.font)}`, text: s.text }))
-    .filter((s) => !document.fonts.check(s.font, s.text))
+    .filter((s) => s.text !== '' && !failed.has(s.font))
+    .map((s) => ({ key: s.font, css: `${s.weight} 16px ${fontStack(s.font)}`, text: s.text }))
+    .filter((s) => !document.fonts.check(s.css, s.text))
   if (pending.length === 0) return false
-  await Promise.all(pending.map((s) => document.fonts.load(s.font, s.text)))
+  const results = await Promise.allSettled(
+    pending.map((s) =>
+      document.fonts.load(s.css, s.text).then((faces) => {
+        if (faces.some((f) => f.status === 'error')) throw new Error('読み込めなかった')
+      }),
+    ),
+  )
+  const newlyFailed = pending.filter((s, i) => results[i].status === 'rejected' && isBundled(s.key) && !failed.has(s.key))
+  if (newlyFailed.length > 0) {
+    newlyFailed.forEach((s) => failed.add(s.key))
+    availabilityListeners.forEach((fn) => fn())
+  }
   return true
+}
+
+/**
+ * 同梱フォントのうち、読み込みに失敗したもの（電波がないときに、まだ使っていない書体を選んだなど）。
+ * ブラウザは一度失敗した書体を同じ画面のままでは読み込み直さないので、開き直すまで覚えておく
+ */
+const failed = new Set<string>()
+const availabilityListeners = new Set<() => void>()
+
+const isBundled = (key: string) => FONT_LIST.some((f) => f.key === key && f.group !== '標準')
+
+/** 書体が使えなくなったときに呼ばれる。描き直しや知らせの表示に使う */
+export function onFontAvailabilityChange(fn: () => void): () => void {
+  availabilityListeners.add(fn)
+  return () => availabilityListeners.delete(fn)
 }
 
 type LocalFontData = { family: string }
@@ -78,6 +104,7 @@ const availability = new Map<string, boolean>()
  * 代わりを3種類試すのは、たまたま同じ幅の書体だった場合に見誤らないため。同梱・標準の書体は常に true。
  */
 export function isFontAvailable(key: string): boolean {
+  if (failed.has(key)) return false
   if (!key.startsWith(LOCAL_PREFIX)) return true
   const cached = availability.get(key)
   if (cached !== undefined) return cached
@@ -93,7 +120,11 @@ export function isFontAvailable(key: string): boolean {
   return found
 }
 
-/** デザインの中で使われている、この端末にない書体の名前 */
-export function missingFonts(fonts: readonly string[]): string[] {
-  return [...new Set(fonts)].filter((k) => !isFontAvailable(k)).map(fontLabel)
+export type MissingFont = { label: string; reason: 'not-installed' | 'not-downloaded' }
+
+/** デザインの中で使われていて、今は使えない書体。PC の書体が入っていないのか、同梱フォントを読み込めなかったのかを分ける */
+export function missingFonts(fonts: readonly string[]): MissingFont[] {
+  return [...new Set(fonts)]
+    .filter((k) => !isFontAvailable(k))
+    .map((k) => ({ label: fontLabel(k), reason: failed.has(k) ? 'not-downloaded' : 'not-installed' }))
 }

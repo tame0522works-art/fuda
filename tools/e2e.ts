@@ -164,7 +164,7 @@ class Ui {
     await this.page.run(`
       const s = document.querySelector(${JSON.stringify(selector)});
       const i = [...s.options].findIndex(o => o.textContent.includes(${JSON.stringify(includes)}));
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, String(i));
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, s.options[i].value);
       s.dispatchEvent(new Event('change', { bubbles: true }));
     `)
     await sleep(300)
@@ -416,6 +416,27 @@ const scenarios: Scenario[] = [
       } finally {
         writeFileSync(swPath, original)
       }
+    },
+  },
+  {
+    name: '電波がないときに、まだ使っていない書体を選ぶと知らせ、電波が戻ってから開き直すと使える',
+    async run(ui) {
+      await ui.open()
+      await ui.waitForServiceWorker()
+      await stopServer()
+      await ui.reload()
+      await ui.click(540, 155)
+      await ui.chooseOption('.inspector .field:has(.font-sample) select', 'DotGothic16')
+      await ui.page.waitFor(`[...document.querySelectorAll('.banner')].some(b => b.textContent.includes('電波がないため'))`, '読み込めなかった知らせ')
+      assert.match((await ui.text('.inspector .field:has(.font-sample) .msg.error'))!, /電波がないため「DotGothic16（レトロ）」を読み込めませんでした/)
+
+      await startServer()
+      await ui.button('開き直す', '.banner')
+      await sleep(1200)
+      await ui.page.waitFor(`document.querySelector('.paper canvas')`, '開き直し')
+      await ui.page.waitFor(`document.fonts.check('700 16px "DotGothic16"', 'お品書き')`, '書体の読み込み')
+      await sleep(300)
+      assert.equal(await ui.banner('電波がないため'), false, '読み込めたら知らせは消える')
     },
   },
   {

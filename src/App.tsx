@@ -11,7 +11,7 @@ import {
 import type { Item } from './fields'
 import { commitFrom, initHistory, push, redo, replace, undo, type History } from './history'
 import { isBackupError, parseBackup, toBackup } from './backup'
-import { missingFonts } from './fonts'
+import { missingFonts, onFontAvailabilityChange } from './fonts'
 import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
 import { applyUpdate, install, needsIosHint, usePwa } from './pwa'
@@ -35,10 +35,21 @@ export default function App() {
   const [editing, setEditing] = useState<{ id: string; selectAll: boolean } | null>(null)
   // 同梱フォントは使う文字の分だけ後から届くので、届くたびに描き直す
   const [fontTick, setFontTick] = useState(0)
+  const [online, setOnline] = useState(() => navigator.onLine)
   useEffect(() => {
     const onLoaded = () => setFontTick((t) => t + 1)
+    const onNetwork = () => setOnline(navigator.onLine)
     document.fonts.addEventListener('loadingdone', onLoaded)
-    return () => document.fonts.removeEventListener('loadingdone', onLoaded)
+    // 書体を読み込めなかったときも、知らせを出し直すために描き直す
+    const offFail = onFontAvailabilityChange(onLoaded)
+    window.addEventListener('online', onNetwork)
+    window.addEventListener('offline', onNetwork)
+    return () => {
+      document.fonts.removeEventListener('loadingdone', onLoaded)
+      offFail()
+      window.removeEventListener('online', onNetwork)
+      window.removeEventListener('offline', onNetwork)
+    }
   }, [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -264,10 +275,12 @@ export default function App() {
 
   // 別の PC で PC の書体を選んだデザインを開いたとき、黙って代わりの書体にならないよう知らせる
   const missing = doc ? missingFonts(doc.elements.flatMap((e) => (e.kind === 'text' ? [e.font] : []))) : []
+  const notInstalled = missing.filter((m) => m.reason === 'not-installed')
+  const notDownloaded = missing.filter((m) => m.reason === 'not-downloaded')
 
   const runExport = async () => {
     if (!docs) return
-    if (missing.length > 0 && !confirm(`この端末には${missing.map((m) => `「${m}」`).join('')}がないため、代わりの書体で書き出されます。書き出しますか？`)) return
+    if (missing.length > 0 && !confirm(`${missing.map((m) => `「${m.label}」`).join('')}を使えないため、代わりの書体で書き出されます。書き出しますか？`)) return
     setBusy(true)
     setError(null)
     try {
@@ -404,9 +417,23 @@ export default function App() {
           <button type="button" className="primary" onClick={applyUpdate}>更新する</button>
         </div>
       )}
-      {missing.length > 0 && (
+      {notInstalled.length > 0 && (
         <div className="banner" role="status">
-          この端末にない書体を使っています: {missing.map((m) => `「${m}」`).join('')}。代わりの書体で表示・書き出しされます（作った PC で開けば元の書体に戻ります）。
+          この端末にない書体を使っています: {notInstalled.map((m) => `「${m.label}」`).join('')}。代わりの書体で表示・書き出しされます（作った PC で開けば元の書体に戻ります）。
+        </div>
+      )}
+      {notDownloaded.length > 0 && (
+        <div className="banner" role="status">
+          <span>
+            電波がないため {notDownloaded.map((m) => `「${m.label}」`).join('')}を読み込めませんでした。代わりの書体で表示・書き出しされます。
+            {online ? '電波が戻ったので、開き直すと使えます。' : '電波のある所で開き直すと使えます。'}
+          </span>
+          {online && (
+            <span className="banner-actions">
+              {/* 直前の編集の自動保存（0.4 秒後）が終わるのを待ってから開き直す */}
+              <button type="button" className="primary" onClick={() => setTimeout(() => location.reload(), 600)}>開き直す</button>
+            </span>
+          )}
         </div>
       )}
       {notice && !error && (
