@@ -722,3 +722,11 @@ main {
   align-items: center;
   gap: 4px;
 }
+.more .menu .dim {
+  max-width: 14em;
+  padding: 2px 4px;
+}
+.banner .primary {
+  margin-left: 12px;
+  padding: 4px 12px;
+}

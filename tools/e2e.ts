@@ -2,7 +2,7 @@
 // 本物のマウス・キーボード・タッチ・ファイル選択を送って、試用で見つかった不具合が戻っていないかを確かめる。
 // `npm run e2e` で実行する（先に dist-e2e へビルドしてから、このスクリプトが配信とブラウザを立ち上げる）。
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -39,6 +39,19 @@ class Ui {
     await this.page.goto(BASE)
     await this.page.waitFor(`document.querySelector('.paper canvas')`, 'エディタの表示')
     await this.page.run(`await document.fonts.ready; await new Promise(r => setTimeout(r, 600))`)
+  }
+
+  /** Service Worker が入り、このページを受け持つまで待つ */
+  async waitForServiceWorker() {
+    await this.page.run(`await navigator.serviceWorker.ready`)
+    await this.page.waitFor(`navigator.serviceWorker.controller`, 'Service Worker の受け持ち')
+  }
+
+  async reload() {
+    await this.page.send('Page.reload')
+    await sleep(300)
+    await this.page.waitFor(`document.readyState === 'complete' && document.querySelector('.paper canvas')`, '読み直し')
+    await sleep(500)
   }
 
   /** 用紙の座標 → 画面上の座標 */
@@ -315,26 +328,113 @@ const scenarios: Scenario[] = [
       assert.equal(docW, layout.innerW, '選んで右パネルが変わっても、横にはみ出さない')
     },
   },
+  {
+    name: 'アプリとして入れられる（manifest にエラーがなく、インストールできない理由がない）',
+    async run(ui) {
+      await ui.open()
+      await ui.waitForServiceWorker()
+      const { errors, data } = await ui.page.send('Page.getAppManifest')
+      assert.deepEqual(errors, [], 'manifest の読み込みエラーがない')
+      assert.equal(JSON.parse(data).short_name, 'fuda')
+      const inst = await ui.page.send('Page.getInstallabilityErrors')
+      // テストごとに保存データを分けるため、シークレットウィンドウ相当の環境で開いている。そこではどのサイトもインストールできないので、その理由だけは除く
+      const reasons = inst.installabilityErrors.map((e: { errorId: string }) => e.errorId).filter((id: string) => id !== 'in-incognito')
+      assert.deepEqual(reasons, [], `インストールできない理由がない: ${JSON.stringify(inst.installabilityErrors)}`)
+    },
+  },
+  {
+    name: '新しい版が届くと知らせが出て、「更新する」で切り替わり、作ったデザインは残る',
+    async run(ui) {
+      await ui.open()
+      await ui.waitForServiceWorker()
+      await ui.click(540, 155, { count: 2 })
+      await ui.type('（更新前）')
+      await ui.key('Escape')
+      await sleep(600)
+      // 配信している sw.js の版の名前だけを書き換えて、新しい版が出たことにする（長さは変えない）
+      const swPath = join('dist-e2e', 'sw.js')
+      const original = readFileSync(swPath, 'utf8')
+      const before = await ui.page.run<string>(`return navigator.serviceWorker.controller.scriptURL`)
+      writeFileSync(swPath, original.replace(/const CACHE = 'fuda-([0-9a-f]{12})'/, (_, v: string) => `const CACHE = 'fuda-${[...v].reverse().join('')}'`))
+      try {
+        await ui.page.run(`await (await navigator.serviceWorker.ready).update()`)
+        await ui.page.waitFor(`[...document.querySelectorAll('.banner')].some(b => b.textContent.includes('新しい版があります'))`, '新しい版の知らせ')
+        const navigated = new Promise((r) => ui.page.on('Page.frameNavigated', r))
+        await ui.button('更新する')
+        await Promise.race([navigated, sleep(5000)])
+        await ui.page.waitFor(`document.querySelector('.paper canvas')`, '読み直し')
+        await sleep(500)
+        assert.equal(await ui.page.run(`return [...document.querySelectorAll('.banner')].some(b => b.textContent.includes('新しい版があります'))`), false, '切り替わったら知らせは消える')
+        assert.equal(await ui.page.run<string>(`return navigator.serviceWorker.controller.scriptURL`), before)
+        await ui.click(540, 155)
+        assert.equal(await ui.page.run(`return document.querySelector('.inspector textarea')?.value`), 'お品書き（更新前）', '更新しても作ったデザインは残る')
+      } finally {
+        writeFileSync(swPath, original)
+      }
+    },
+  },
+  {
+    name: '電波がなくても開け、一度使った同梱フォントも使える',
+    async run(ui) {
+      await ui.open()
+      await ui.waitForServiceWorker()
+      await ui.click(540, 155)
+      await ui.page.run(`
+        const s = [...document.querySelectorAll('.inspector .field')].find(f => f.querySelector('span')?.textContent === '書体').querySelector('select');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'zen-maru');
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+      `)
+      await ui.page.waitFor(`document.fonts.check('700 16px "Zen Maru Gothic"', 'お品書き')`, '同梱フォントの読み込み')
+      await ui.page.waitFor(`caches.open('fuda-fonts').then(c => c.keys()).then(k => k.length > 0)`, 'フォントのキャッシュ')
+      await sleep(600)
+
+      await stopServer()
+      assert.equal(await fetch(BASE).then(() => 'up', () => 'down'), 'down', '配信が止まっている')
+      await ui.reload()
+      const offline = await ui.page.run<{ title: string; fontLoaded: boolean }>(`
+        const faces = await document.fonts.load('700 16px "Zen Maru Gothic"', 'お品書き');
+        return { title: document.title, fontLoaded: faces.length > 0 && faces.every(f => f.status === 'loaded') };
+      `)
+      assert.equal(offline.title, 'fuda', '電波がなくても開ける')
+      assert.equal(offline.fontLoaded, true, '一度使った同梱フォントは電波がなくても読める')
+      await ui.click(540, 155)
+      assert.equal(await ui.field('書体'), 'zen-maru', '作ったデザインも残っている')
+    },
+  },
 ]
 
+let server: ChildProcess | null = null
+
 async function startServer() {
+  if (server) return
   // vite の preview で dist-e2e を配信する（npx を介さず、どの OS でも同じ起動のしかたにする）
-  const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--outDir', 'dist-e2e', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore' })
+  server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--outDir', 'dist-e2e', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore' })
   for (let i = 0; i < 100; i++) {
-    if (await fetch(BASE).then((r) => r.ok, () => false)) return server
+    if (await fetch(BASE).then((r) => r.ok, () => false)) return
     await sleep(100)
   }
-  server.kill()
+  stopServer()
   throw new Error('テスト用のサーバーが起動しませんでした')
+}
+
+/** 電波がない状態を作るため、配信そのものを止める（ブラウザの「オフライン」は Service Worker の通信には効かないことがある） */
+async function stopServer() {
+  if (!server) return
+  const s = server
+  server = null
+  const exited = new Promise((r) => s.once('exit', r))
+  s.kill()
+  await exited
 }
 
 async function main() {
   const only = process.argv[2]
-  const server = await startServer()
+  await startServer()
   const browser = await Browser.launch(9334)
   let failed = 0
   try {
     for (const s of scenarios.filter((s) => !only || s.name.includes(only))) {
+      await startServer()
       const downloads = mkdtempSync(join(tmpdir(), 'fuda-e2e-dl-'))
       const page = await browser.newPage(s.viewport ?? DESKTOP, { downloadPath: downloads })
       const ui = new Ui(page, downloads)
@@ -355,7 +455,7 @@ async function main() {
     }
   } finally {
     await browser.close()
-    server.kill()
+    await stopServer()
   }
   if (failed > 0) {
     console.log(`\n${failed} 件失敗しました（失敗時の画面: ${FAILURES}/）`)

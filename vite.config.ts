@@ -1,4 +1,7 @@
 import react from '@vitejs/plugin-react'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
 /**
@@ -31,6 +34,9 @@ const CSP = [
   "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'none'",
+  // アプリとして入れるための manifest と、電波がなくても開くための Service Worker だけは、自分のサイトから読ませる
+  "manifest-src 'self'",
+  "worker-src 'self'",
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",
@@ -48,8 +54,42 @@ function contentSecurityPolicy(): Plugin {
   }
 }
 
+/**
+ * ビルドで出たファイルを列挙した sw.js を書き出す。
+ * 本体（HTML・JS・CSS・アイコンなど）はインストール時にすべて取り込み、電波がなくても開けるようにする。
+ * 同梱フォントは約930ファイル・16MB あり、全部取り込むとスマホには重いので、使った分だけ sw.js が残す。
+ */
+function serviceWorker(base: string): Plugin {
+  return {
+    name: 'fuda-service-worker',
+    apply: 'build',
+    writeBundle(options) {
+      const outDir = options.dir!
+      const files = readdirSync(outDir, { recursive: true, withFileTypes: true })
+        .filter((d) => d.isFile() && d.name !== 'sw.js')
+        .map((d) => join(d.parentPath, d.name))
+      // 版の名前は、フォントも含めた全ファイルの中身から決める（どれかが変われば新しい版になる）
+      const hash = createHash('sha256')
+      for (const f of files.sort()) hash.update(readFileSync(f))
+      const precache = files
+        .filter((f) => !f.endsWith('.woff2'))
+        .map((f) => base + f.slice(outDir.length + 1).replaceAll('\\', '/'))
+        .sort()
+      writeFileSync(
+        join(outDir, 'sw.js'),
+        readFileSync('sw-template.js', 'utf8')
+          .replace('__VERSION__', hash.digest('hex').slice(0, 12))
+          .replace('__BASE__', JSON.stringify(base))
+          .replace('__PRECACHE__', JSON.stringify([base, ...precache])),
+      )
+    },
+  }
+}
+
+const base = process.env.BASE_PATH ?? '/'
+
 // GitHub Pages ではリポジトリ名の下（/fuda/）で配信されるので、CI から BASE_PATH で渡す
 export default defineConfig({
-  base: process.env.BASE_PATH ?? '/',
-  plugins: [woff2Only(), contentSecurityPolicy(), react()],
+  base,
+  plugins: [woff2Only(), contentSecurityPolicy(), serviceWorker(base), react()],
 })

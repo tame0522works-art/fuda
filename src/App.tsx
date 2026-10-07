@@ -14,6 +14,7 @@ import { isBackupError, parseBackup, toBackup } from './backup'
 import { missingFonts } from './fonts'
 import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
 import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
+import { applyUpdate, install, needsIosHint, usePwa } from './pwa'
 
 type Docs = Record<Tab, History<Doc>>
 
@@ -42,6 +43,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [preview, setPreview] = useState<ExportPreviewData | null>(null)
+  const pwa = usePwa()
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const backupInput = useRef<HTMLInputElement>(null)
@@ -313,6 +315,11 @@ export default function App() {
         </nav>
         <div className="spacer" />
         <div className="header-actions">
+          {pwa.canInstall && (
+            <button type="button" className="wide-only" onClick={() => void install()} title="ホーム画面やデスクトップに追加し、アプリとして開けるようにする">
+              アプリとして入れる
+            </button>
+          )}
           <button type="button" className="wide-only" onClick={saveBackup} title="3つのデザイン・品目・画像を1つのファイルに保存する（別の端末へ移すときにも）">
             バックアップ
           </button>
@@ -323,6 +330,10 @@ export default function App() {
             <div className="menu">
               <button type="button" onClick={() => { moreRef.current!.open = false; void saveBackup() }}>バックアップ</button>
               <button type="button" onClick={() => { moreRef.current!.open = false; backupInput.current!.click() }}>復元</button>
+              {pwa.canInstall && (
+                <button type="button" onClick={() => { moreRef.current!.open = false; void install() }}>アプリとして入れる</button>
+              )}
+              {needsIosHint() && <p className="dim">アプリとして入れるには、Safari の共有ボタンから「ホーム画面に追加」を選びます。</p>}
             </div>
           </details>
           <input
@@ -344,6 +355,12 @@ export default function App() {
         </div>
       </header>
 
+      {pwa.updateReady && (
+        <div className="banner ok" role="status">
+          fuda の新しい版があります。作ったデザインはそのまま残ります。
+          <button type="button" className="primary" onClick={applyUpdate}>更新する</button>
+        </div>
+      )}
       {missing.length > 0 && (
         <div className="banner" role="status">
           この端末にない書体を使っています: {missing.map((m) => `「${m}」`).join('')}。代わりの書体で表示・書き出しされます（作った PC で開けば元の書体に戻ります）。
