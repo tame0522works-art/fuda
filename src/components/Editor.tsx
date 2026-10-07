@@ -5,6 +5,7 @@ import { ensureFonts } from '../fonts'
 import { drawDoc, textOverflows, textSpecs, type Images } from '../render'
 import { bboxOf, hitTest, idsInside } from '../group'
 import { snapMove, snapResize, type Box, type Guide } from '../snap'
+import { isTouch } from '../device'
 import TextEditBox from './TextEditBox'
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -47,8 +48,8 @@ const PAD = 32
 const colorOf = (el: El) => (el.kind === 'text' ? el.color : el.kind === 'rect' ? el.fill : 'transparent')
 /** 画面上でこの距離（px）まで近づいたら吸着する。用紙の単位ではなく見た目の距離で決める */
 const SNAP_PX = 6
-/** 枠線だけの図形を「線の上」とみなす幅（画面の px） */
-const HIT_PX = 6
+/** 枠線だけの図形を「線の上」とみなす幅（画面の px）。指は狙いがずれやすいので広げる */
+const HIT_PX = isTouch() ? 14 : 6
 
 export default function Editor({ doc, images, item, selectedIds, onSelect, onPreview, onCommit, editing, onEdit, onDuplicate, onDelete, onRecolor, onDropImages, fontTick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -234,8 +235,16 @@ export default function Editor({ doc, images, item, selectedIds, onSelect, onPre
   const colorable = selectedEls.find((e) => e.kind !== 'image')
 
   // よく使う操作は右のパネルまで探しに行かなくて済むよう、選んだ要素（まとまり）のそばに出す
-  const quickActions = (top: number) => (
-    <div className={top * scale < 40 ? 'quick-actions below' : 'quick-actions'} onPointerDown={(e) => e.stopPropagation()}>
+  const quickActions = (box: { x: number; y: number; w: number }) => (
+    <div
+      className={[
+        'quick-actions',
+        box.y * scale < 40 && 'below',
+        // ページの左寄りにある要素では左端に揃え、ボタンがページの外（画面の外）へはみ出さないようにする
+        box.x + box.w / 2 < doc.page.width / 2 && 'start',
+      ].filter(Boolean).join(' ')}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {group && <span className="quick-count">{selectedEls.length} 個</span>}
       <button type="button" title="すぐ下に同じ書式で増やす (Ctrl+D)" onClick={onDuplicate}>複製</button>
       {selected?.kind === 'text' && (
@@ -328,7 +337,7 @@ export default function Editor({ doc, images, item, selectedIds, onSelect, onPre
               />
             ))}
             {overflow && <div className="overflow-note">文字が枠からはみ出しています</div>}
-            {quickActions(selected.y)}
+            {quickActions(selected)}
           </div>
         )}
         {group && !editingEl && (
@@ -337,7 +346,7 @@ export default function Editor({ doc, images, item, selectedIds, onSelect, onPre
               <div key={el.id} className="selection member" style={{ left: el.x * scale, top: el.y * scale, width: el.w * scale, height: el.h * scale }} />
             ))}
             <div className="selection group" style={{ left: group.x * scale, top: group.y * scale, width: group.w * scale, height: group.h * scale }}>
-              {quickActions(group.y)}
+              {quickActions(group)}
             </div>
           </>
         )}

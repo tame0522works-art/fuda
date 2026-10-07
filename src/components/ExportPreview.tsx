@@ -29,8 +29,16 @@ const kb = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).t
  * PNG は保存されるファイルそのものを読み直して表示する。PDF は埋め込む画像（JPEG にしたページは圧縮後のもの）を縮めて表示する。
  * PNG は「スマホの画面幅」、PDF は「印刷したときの大きさ」に切り替えて、文字が読める大きさかを確かめられる。
  */
+/** スマホでは、保存せずに SNS などのアプリへ直接渡せるようにする（対応していないブラウザでは出さない） */
+function shareableFile(data: ExportPreviewData): File | null {
+  const file = new File([data.blob], data.name, { type: data.blob.type })
+  return typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] }) ? file : null
+}
+
 export default function ExportPreview({ data, onSave, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const [shareFile] = useState(() => shareableFile(data))
+  const [shareError, setShareError] = useState<string | null>(null)
   const saveRef = useRef<HTMLButtonElement>(null)
   const [zoom, setZoom] = useState<'fit' | 'real'>('fit')
 
@@ -94,8 +102,22 @@ export default function ExportPreview({ data, onSave, onClose }: Props) {
             : '画面上でおおよそ実寸の大きさです（画面によって多少ずれます）。印刷して読める文字の大きさか確かめてください。'}
         </p>
       )}
+      {shareError && <p className="msg error">{shareError}</p>}
       <footer>
         <button type="button" onClick={onClose}>閉じる</button>
+        {shareFile && (
+          <button
+            type="button"
+            onClick={() =>
+              navigator.share({ files: [shareFile] }).catch((e: unknown) => {
+                // 共有の画面を自分で閉じたときは何も言わない
+                if (!(e instanceof DOMException && e.name === 'AbortError')) setShareError('共有できませんでした。「保存する」で保存してから共有してください')
+              })
+            }
+          >
+            共有
+          </button>
+        )}
         <button type="button" className="primary" ref={saveRef} onClick={onSave}>保存する</button>
       </footer>
     </dialog>

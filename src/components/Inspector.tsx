@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FIELDS } from '../fields'
 import { PRESETS, PT_IN_MM, resizePage, round, updateEl, type Doc, type El, type Tab } from '../doc'
+import { isTouch } from '../device'
 import type { Align } from '../group'
 import { FONT_LIST, LOCAL_PREFIX, canListLocalFonts, fontLabel, fontStack, fontWeights, isFontAvailable, listLocalFonts, localFontKey } from '../fonts'
 
@@ -74,15 +75,21 @@ export default function Inspector({ tab, doc, selected, onDoc, onDelete, onDupli
             <button type="button" onClick={onDuplicate}>まとめて複製</button>
             <button type="button" className="danger" onClick={onDelete}>まとめて削除</button>
           </div>
-          <p className="dim">Shift を押しながらクリックで追加・解除、何もない所からドラッグで囲んで選べます。</p>
+          <p className="dim">
+            {isTouch() ? '何もない所から指でなぞって囲むと選べます。' : 'Shift を押しながらクリックで追加・解除、何もない所からドラッグで囲んで選べます。'}
+          </p>
         </section>
       ) : selected ? (
         <ElementFields key={selected.id} doc={doc} el={selected} onDoc={onDoc} tab={tab} localFonts={localFonts} onLocalFonts={setLocalFonts} />
       ) : (
         <section>
-          <p className="dim">ページ上の要素をクリックすると、ここで文字や色を変えられます。</p>
+          <p className="dim">ページ上の要素を{isTouch() ? 'タップ' : 'クリック'}すると、ここで文字や色を変えられます。</p>
           <p className="dim">行を増やすときは、近い行を選んで「複製」を押すと、すぐ下に同じ書式の行ができます。</p>
-          <p className="dim">まとめて動かすときは、何もない所からドラッグして囲むか、Shift を押しながらクリックします。</p>
+          <p className="dim">
+            {isTouch()
+              ? 'まとめて動かすときは、ページの何もない所から指でなぞって囲みます。'
+              : 'まとめて動かすときは、何もない所からドラッグして囲むか、Shift を押しながらクリックします。'}
+          </p>
         </section>
       )}
 

@@ -45,6 +45,7 @@ export default function App() {
   const lastEdit = useRef<{ key: string; at: number } | null>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const backupInput = useRef<HTMLInputElement>(null)
+  const moreRef = useRef<HTMLDetailsElement>(null)
 
   /** 保存データやバックアップの中身を画面に反映する。元に戻すの履歴と選択はここで初めからにする */
   const applySaved = useCallback(async (saved: db.Saved) => {
@@ -311,26 +312,36 @@ export default function App() {
           ))}
         </nav>
         <div className="spacer" />
-        <button type="button" onClick={saveBackup} title="3つのデザイン・品目・画像を1つのファイルに保存する（別の端末へ移すときにも）">
-          バックアップ
-        </button>
-        <button type="button" onClick={() => backupInput.current!.click()} title="バックアップのファイルから戻す">復元</button>
-        <input
-          ref={backupInput}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            e.target.value = ''
-            if (f) void restoreBackup(f)
-          }}
-        />
-        <button type="button" onClick={() => edit(undo)} disabled={h.past.length === 0} title="元に戻す (Ctrl+Z)">元に戻す</button>
-        <button type="button" onClick={() => edit(redo)} disabled={h.future.length === 0} title="やり直し (Ctrl+Shift+Z)">やり直し</button>
-        <button type="button" className="primary" onClick={runExport} disabled={busy}>
-          {busy ? '書き出し中…' : `${tabInfo.output}を書き出す`}
-        </button>
+        <div className="header-actions">
+          <button type="button" className="wide-only" onClick={saveBackup} title="3つのデザイン・品目・画像を1つのファイルに保存する（別の端末へ移すときにも）">
+            バックアップ
+          </button>
+          <button type="button" className="wide-only" onClick={() => backupInput.current!.click()} title="バックアップのファイルから戻す">復元</button>
+          {/* 画面の狭いスマホでは、たまにしか使わないバックアップ・復元を「その他」にまとめて、ボタンの段数を減らす */}
+          <details className="more narrow-only" ref={moreRef}>
+            <summary>その他</summary>
+            <div className="menu">
+              <button type="button" onClick={() => { moreRef.current!.open = false; void saveBackup() }}>バックアップ</button>
+              <button type="button" onClick={() => { moreRef.current!.open = false; backupInput.current!.click() }}>復元</button>
+            </div>
+          </details>
+          <input
+            ref={backupInput}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) void restoreBackup(f)
+            }}
+          />
+          <button type="button" onClick={() => edit(undo)} disabled={h.past.length === 0} title="元に戻す (Ctrl+Z)">元に戻す</button>
+          <button type="button" onClick={() => edit(redo)} disabled={h.future.length === 0} title="やり直し (Ctrl+Shift+Z)">やり直し</button>
+          <button type="button" className="primary" onClick={runExport} disabled={busy}>
+            {busy ? '書き出し中…' : `${tabInfo.output}を書き出す`}
+          </button>
+        </div>
       </header>
 
       {missing.length > 0 && (

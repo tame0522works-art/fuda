@@ -201,7 +201,8 @@ main {
 .paper {
   position: relative;
   box-shadow: 0 2px 16px rgb(0 0 0 / 0.25);
-  touch-action: none;
+  /* 1本指のドラッグは要素の移動・囲み選択に使い、2本指の拡大だけはブラウザに任せる */
+  touch-action: pinch-zoom;
   cursor: default;
 }
 .paper canvas {
@@ -266,6 +267,10 @@ main {
   flex-direction: column;
   gap: 3px;
 }
+.field input:not([type='color']):not([type='checkbox']):not([type='radio']),
+.field select {
+  width: 100%;
+}
 .field > span {
   font-size: 12px;
   color: var(--ink-dim);
@@ -286,7 +291,8 @@ main {
 }
 .grid2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 入力欄の既定の幅（文字の大きさで決まる）に引っぱられて、画面の外へ広がらないようにする */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 .row {
@@ -364,27 +370,129 @@ main {
   color: var(--ink-dim);
 }
 
-/* 編集は PC 向けだが、スマホで開いても崩れず確認だけはできるようにする */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.more {
+  position: relative;
+}
+.more summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius);
+}
+.more summary::-webkit-details-marker {
+  display: none;
+}
+.more .menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+}
+
+@media (min-width: 761px) {
+  .narrow-only {
+    display: none;
+  }
+}
+
+/* スマホ: 上から「操作」「ページ」「設定」の順に縦に並べ、設定をスクロールしてもページは画面上部に残す */
 @media (max-width: 760px) {
+  .app {
+    height: auto;
+    min-height: 100%;
+  }
+  .wide-only {
+    display: none;
+  }
+  header {
+    padding: 6px 12px;
+    row-gap: 6px;
+  }
+  header .spacer {
+    display: none;
+  }
+  .tabs {
+    margin-left: 0;
+  }
+  .header-actions {
+    width: 100%;
+    gap: 6px;
+  }
+  .header-actions .primary {
+    margin-left: auto;
+  }
+  header button,
+  .more summary {
+    padding: 5px 9px;
+    font-size: 13px;
+  }
   main {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 60vh auto;
+    display: flex;
+    flex-direction: column;
   }
   .tools {
     flex-direction: row;
     flex-wrap: wrap;
     border-right: none;
     border-bottom: 1px solid var(--panel-edge);
+    padding: 8px 12px;
   }
   .tools hr {
     display: none;
+  }
+  .stage {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex: none;
+    height: 55vh;
+    border-bottom: 1px solid var(--panel-edge);
   }
   .panel {
     border-left: none;
     overflow: visible;
   }
-  .tabs {
-    margin-left: 0;
+}
+
+/* 指で操作する端末: つまみと当たり判定を大きくし、できない操作（ドラッグで画像を入れる）の案内は出さない */
+@media (pointer: coarse) {
+  .handle {
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+  }
+  .handle::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+  .tool-hint {
+    display: none;
+  }
+  /* iPhone は 16px 未満の入力欄に触れると画面を拡大してしまう */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .quick-actions button,
+  .quick-color {
+    padding: 6px 12px;
+    font-size: 13px;
   }
 }
 
@@ -432,6 +540,10 @@ main {
   gap: 4px;
   pointer-events: auto;
   white-space: nowrap;
+}
+.quick-actions.start {
+  right: auto;
+  left: 0;
 }
 .quick-actions.below {
   bottom: auto;
