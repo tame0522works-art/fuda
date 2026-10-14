@@ -112,5 +112,7 @@ function buildVersion(): string {
 export default defineConfig({
   base,
   define: { __APP_VERSION__: JSON.stringify(buildVersion()) },
+  // 書き出しの Worker（src/export.worker.ts）も ES モジュールとして作る
+  worker: { format: 'es' },
   plugins: [woff2Only(), contentSecurityPolicy(), serviceWorker(base), react()],
 })

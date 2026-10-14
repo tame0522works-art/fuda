@@ -329,6 +329,7 @@ const scenarios: Scenario[] = [
       await ui.button('A4 に面付けした PDFを書き出す')
       await ui.page.waitFor(`document.querySelector('dialog[open] canvas')`, '確認画面')
       assert.match((await ui.text('dialog[open] header .dim'))!, /× 1ページ/)
+      assert.equal(await ui.page.run(`return performance.getEntriesByType('resource').some(e => e.name.includes('export.worker'))`), true, '書き出しは Worker で行う（画面を止めない）')
       await ui.button('保存する', 'dialog[open]')
       const pdf = await ui.download('.pdf')
       assert.equal(pdf.subarray(0, 8).toString('latin1'), '%PDF-1.4')
@@ -366,6 +367,19 @@ const scenarios: Scenario[] = [
       await ui.button('保存する', 'dialog[open]')
       const pdf = await ui.download('.pdf')
       assert.equal(pdf.subarray(0, 8).toString('latin1'), '%PDF-1.4')
+    },
+  },
+  {
+    name: 'Worker を使えないブラウザでも、画面側で書き出して保存できる',
+    async run(ui) {
+      await ui.open()
+      // Worker を作れないブラウザを再現する（最初の書き出しのときに作るので、その前に差し替える）
+      await ui.page.run(`window.Worker = function () { throw new Error('Worker は使えません') }`)
+      await ui.button('PNG 画像を書き出す')
+      await ui.page.waitFor(`document.querySelector('dialog[open]')`, '確認画面')
+      await ui.button('保存する', 'dialog[open]')
+      const png = await ui.download('.png')
+      assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1080, 1350])
     },
   },
   {

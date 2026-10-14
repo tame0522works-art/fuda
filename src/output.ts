@@ -43,7 +43,8 @@ export type PreviewPage = { bitmap: ImageBitmap; widthMm: number; heightMm: numb
 
 export type PdfExport = { blob: Blob; pages: PreviewPage[] }
 
-type PrintOptions = { preview?: boolean }
+/** preview: 確認画面用の縮小画像も作る。onProgress: 何枚目まで描いたか（値札のように何枚もあるとき） */
+type PrintOptions = { preview?: boolean; onProgress?: (done: number, total: number) => void }
 
 /** hasPhoto のページは JPEG も作って比べる（pdf.ts の chooseImage） */
 async function printPage(
@@ -94,8 +95,10 @@ export async function exportCardsPdf(card: Doc, items: readonly Item[], images: 
   // 書体の読み込みが終わる前に描くと、その品目だけ代わりの書体で刷られてしまう
   await ensureFonts(textSpecs(card, items))
   const printed = []
-  for (let s = 0; s < sheetCount(items.length, layout); s++) {
+  const total = sheetCount(items.length, layout)
+  for (let s = 0; s < total; s++) {
     printed.push(await printPage(A4.width, A4.height, hasPhoto(card), opts, (ctx, k) => drawSheet(ctx, card, items, s, k, images)))
+    opts.onProgress?.(s + 1, total)
   }
   return toPdfExport(printed)
 }

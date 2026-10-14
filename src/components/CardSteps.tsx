@@ -3,6 +3,7 @@ import type { CardSteps as Steps } from '../steps'
 type Props = {
   steps: Steps
   busy: boolean
+  busyText: string
   onAddItem: () => void
   onExport: () => void
 }
@@ -10,7 +11,7 @@ type Props = {
 const MARK = { done: '✓', warn: '!', todo: '' } as const
 
 /** 値札タブの上に出す「① デザイン ② 品目 ③ 書き出す」。今どこまで済んでいて、次に何をするかを示す */
-export default function CardSteps({ steps, busy, onAddItem, onExport }: Props) {
+export default function CardSteps({ steps, busy, busyText, onAddItem, onExport }: Props) {
   return (
     <ol className="card-steps" aria-label="値札を作る手順">
       {steps.steps.map((s, i) => (
@@ -24,7 +25,7 @@ export default function CardSteps({ steps, busy, onAddItem, onExport }: Props) {
             <button type="button" className="primary" onClick={onAddItem}>品目を追加</button>
           )}
           {s.key === 'export' && steps.current === 'export' && (
-            <button type="button" className="primary" onClick={onExport} disabled={busy}>{busy ? '書き出し中…' : '書き出す'}</button>
+            <button type="button" className="primary" onClick={onExport} disabled={busy}>{busy ? busyText : '書き出す'}</button>
           )}
         </li>
       ))}

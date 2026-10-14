@@ -14,7 +14,8 @@ import { commitFrom, initHistory, push, redo, replace, undo, type History } from
 import { isBackupError, parseBackup, toBackup } from './backup'
 import { missingFonts, onFontAvailabilityChange } from './fonts'
 import { alignEls, distributeEls, duplicateEls, moveEls, removeEls } from './group'
-import { download, exportCardsPdf, exportPng, exportPopPdf, fileStamp } from './output'
+import { runExportJob } from './exporter'
+import { download, fileStamp } from './output'
 import { applyUpdate, install, needsIosHint, usePwa } from './pwa'
 import { EMPTY_STATUS, backupReminder, markBackedUp, markEdited, markRestored, type BackupStatus } from './reminder'
 import { textOverflows } from './render'
@@ -55,6 +56,8 @@ export default function App() {
     }
   }, [])
   const [busy, setBusy] = useState(false)
+  // 値札のように何枚もあるときの、書き出しの進み具合
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [preview, setPreview] = useState<ExportPreviewData | null>(null)
@@ -293,29 +296,30 @@ export default function App() {
     if (!docs) return
     if (missing.length > 0 && !confirm(`${missing.map((m) => `「${m.label}」`).join('')}を使えないため、代わりの書体で書き出されます。書き出しますか？`)) return
     setBusy(true)
+    setProgress(null)
     setError(null)
     try {
-      // 書き出し中に表示が固まって見えないよう、ボタンの表示を先に描かせてから重い処理に入る
-      await new Promise((r) => setTimeout(r, 30))
       const stamp = fileStamp()
+      // 描画と圧縮は Worker で行うので、書き出し中も画面は止まらない。
       // 保存する前に確認画面を出す。確認したものをそのまま保存するので、ここで作ったファイルを持っておく
       if (tab === 'menu') {
-        const blob = await exportPng(docs.menu.present, images)
+        const { blob } = await runExportJob({ kind: 'png', doc: docs.menu.present }, images)
         setPreview({ kind: 'png', blob, name: `oshinagaki-${stamp}.png`, bitmap: await createImageBitmap(blob) })
       }
       if (tab === 'pop') {
-        const pdf = await exportPopPdf(docs.pop.present, images, { preview: true })
+        const pdf = await runExportJob({ kind: 'pop', doc: docs.pop.present }, images)
         setPreview({ kind: 'pdf', ...pdf, name: `pop-${stamp}.pdf` })
       }
       if (tab === 'card') {
         // 品目がまだなくても、どんな値札になるかは確かめられるよう、差し込み欄のまま1面だけ見せる（保存はさせない）
-        const pdf = await exportCardsPdf(docs.card.present, items, images, { preview: true })
+        const pdf = await runExportJob({ kind: 'cards', card: docs.card.present, items }, images, (done, total) => setProgress({ done, total }))
         setPreview({ kind: 'pdf', ...pdf, name: `nefuda-${stamp}.pdf`, sampleOnly: items.length === 0 })
       }
     } catch (e) {
       setError((e as Error).message || '書き出しに失敗しました')
     } finally {
       setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -369,6 +373,8 @@ export default function App() {
           overflowCount: items.filter((it) => card.elements.some((e) => e.kind === 'text' && textOverflows(e, it))).length,
         })
       : null
+
+  const busyText = progress && progress.total > 1 ? `書き出し中 ${progress.done} / ${progress.total}` : '書き出し中…'
 
   if (!docs || !doc) return <div className="loading">読み込み中…</div>
 
@@ -426,7 +432,7 @@ export default function App() {
           <button type="button" onClick={() => edit(redo)} disabled={h.future.length === 0} title="やり直し (Ctrl+Shift+Z)">やり直し</button>
           <button type="button" className="primary" onClick={runExport} disabled={busy}>
             {/* スマホでは上部が窮屈になるので「書き出す」だけにする（何を書き出すかは確認画面で分かる） */}
-            {busy ? '書き出し中…' : <><span className="wide-only">{tabInfo.output}を</span>書き出す</>}
+            {busy ? busyText : <><span className="wide-only">{tabInfo.output}を</span>書き出す</>}
           </button>
         </div>
       </header>
@@ -508,7 +514,7 @@ export default function App() {
         />
       )}
 
-      {steps && <CardSteps steps={steps} busy={busy} onAddItem={addItem} onExport={() => void runExport()} />}
+      {steps && <CardSteps steps={steps} busy={busy} busyText={busyText} onAddItem={addItem} onExport={() => void runExport()} />}
 
       <main>
         <aside className="tools" aria-label="要素を追加">

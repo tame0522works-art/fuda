@@ -49,15 +49,19 @@ export function fontLabel(key: string): string {
  * 同梱フォントは文字のまとまりごとに分割してあり、canvas は自分では読み込みを起こさないため。
  * 新しく読み込んだものがあれば true（描き直しが要る）。
  */
+/** 画面側では document.fonts、書き出しの Worker の中では self.fonts。書き出しの処理を両方で同じに使うため */
+export const fontFaceSet = (): FontFaceSet =>
+  typeof document !== 'undefined' ? document.fonts : (self as unknown as { fonts: FontFaceSet }).fonts
+
 export async function ensureFonts(specs: readonly { font: string; weight: number; text: string }[]): Promise<boolean> {
   const pending = specs
     .filter((s) => s.text !== '' && !failed.has(s.font))
     .map((s) => ({ key: s.font, css: `${s.weight} 16px ${fontStack(s.font)}`, text: s.text }))
-    .filter((s) => !document.fonts.check(s.css, s.text))
+    .filter((s) => !fontFaceSet().check(s.css, s.text))
   if (pending.length === 0) return false
   const results = await Promise.allSettled(
     pending.map((s) =>
-      document.fonts.load(s.css, s.text).then((faces) => {
+      fontFaceSet().load(s.css, s.text).then((faces) => {
         if (faces.some((f) => f.status === 'error')) throw new Error('読み込めなかった')
       }),
     ),
