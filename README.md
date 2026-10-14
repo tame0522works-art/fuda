@@ -164,7 +164,7 @@ CSP は通信を禁止したまま、manifest と Service Worker だけを自分
 
 ```bash
 npm install
-npm run dev
+npm run dev           # http://localhost:5182/（ほかの作品と重ならないよう、ポートを固定している）
 ```
 
 ```bash

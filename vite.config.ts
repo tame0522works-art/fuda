@@ -112,6 +112,9 @@ function buildVersion(): string {
 export default defineConfig({
   base,
   define: { __APP_VERSION__: JSON.stringify(buildVersion()) },
+  // 開発サーバーのポートを固定する。ほかの作品（koe は 5179）と重なると同時に起動できず、
+  // README の画像を撮るスクリプトが別の作品の画面を撮ってしまうため
+  server: { port: 5182, strictPort: true },
   // 書き出しの Worker（src/export.worker.ts）も ES モジュールとして作る
   worker: { format: 'es' },
   plugins: [woff2Only(), contentSecurityPolicy(), serviceWorker(base), react()],

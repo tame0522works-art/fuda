@@ -7,7 +7,7 @@ import { newImage, newRect, newText, starterDoc, type Doc, type El, type TextEl 
 import type { Item } from '../src/fields.ts'
 import { Browser, sleep, type Page } from './cdp.ts'
 
-const BASE = process.argv[2] ?? 'http://localhost:5179/'
+const BASE = process.argv[2] ?? 'http://localhost:5182/'
 const OUT = 'docs/images'
 
 // ---- 見本のデザイン（サークル名などは架空。新刊は作者の台本「眠れない夏の夜」） ----
@@ -87,6 +87,9 @@ async function saveDataUrl(cdp: Page, body: string, name: string) {
 
 /** 開いたばかりのページで、書体の読み込みと描き直しが落ち着くのを待つ */
 async function settle(cdp: Page) {
+  // 同じポートで別の作品が動いていると、その画面を撮ってしまうので、fuda であることを先に確かめる
+  const title = await cdp.run<string>(`return document.title`)
+  if (title !== 'fuda') throw new Error(`${BASE} で動いているのは fuda ではありません（ページの題名: ${title || 'なし'}）。fuda の開発サーバー（npm run dev）を起動してください`)
   await cdp.waitFor(`document.querySelector('.paper canvas')`, 'エディタの表示')
   await cdp.run(`await document.fonts.ready; await new Promise(r => setTimeout(r, 1500)); await document.fonts.ready`)
 }
