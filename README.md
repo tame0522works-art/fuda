@@ -179,6 +179,8 @@ npm run screenshots   # README の画像を撮り直す（開発サーバーを�
 直した不具合（「横長」が縦長になる、確認画面中の Delete で要素が消える）をわざと戻すと、対応するテストが失敗することも確かめた。
 
 `main` に push すると、GitHub Actions が lint・検証・画面操作のテスト・ビルドを通したうえで GitHub Pages に公開する（[`.github/workflows/pages.yml`](.github/workflows/pages.yml)）。
+Pull Request では同じ確認とビルドまでを動かし、公開はしない。
+依存パッケージとアクションの更新は、Dependabot が毎週月曜に Pull Request で知らせる（[`.github/dependabot.yml`](.github/dependabot.yml)）。小さな更新はまとめて1つにし、メジャー更新は個別にする。確認が通ったものをマージする。
 
 README の画像は [`tools/screenshots.ts`](tools/screenshots.ts) で撮っている。Edge（なければ Chrome）を画面なしで起動し、Chrome DevTools Protocol で見本のデザインを入れて要素を選び、確認画面を開くまでを毎回同じ手順で行う。普段のブラウザのデータには触れない（一時プロファイルを使い、終わったら消す）。
 見本のお品書きのサークル名・スペース番号は架空のもの。新刊は作者の台本「眠れない夏の夜」。表紙の絵はスクリプトの中で描いている。
