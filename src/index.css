@@ -11,6 +11,8 @@
   --stage: #222a35;
   --select: #4ea1ff;
   --guide: #ff3d9a;
+  /* 警告色・完了色の上に置く文字（はみ出しの知らせ、値札の手順の印）。ダークでは警告色・完了色が明るいので暗くする */
+  --on-status: #0e1116;
   --radius: 8px;
 
   color-scheme: dark;
@@ -26,13 +28,14 @@
     --panel-edge: #dde2e9;
     --ink: #1b2028;
     --ink-dim: #5f6a7a;
-    --accent: #b7791f;
+    --accent: #9c6214;
     --accent-ink: #ffffff;
     --warn: #c2410c;
     --ok: #15803d;
     --stage: #e4e8ee;
     --select: #1f6feb;
     --guide: #e0137a;
+    --on-status: #ffffff;
     color-scheme: light;
   }
 }
@@ -227,7 +230,7 @@ main {
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--warn);
-  color: #fff;
+  color: var(--on-status);
 }
 .handle {
   position: absolute;
@@ -789,12 +792,12 @@ main {
 .card-steps li.done .step-no {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--on-status);
 }
 .card-steps li.warn .step-no {
   background: var(--warn);
   border-color: var(--warn);
-  color: #fff;
+  color: var(--on-status);
 }
 .step-text {
   display: flex;
