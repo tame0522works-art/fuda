@@ -1,5 +1,5 @@
 // Edge / Chrome を画面なしで起動し、Chrome DevTools Protocol で操作するための最小限の道具。
-// README の画像を撮る screenshots.ts と、画面操作のテスト e2e.ts で使う。
+// 画面テスト（e2e.ts）と README の画像（screenshots.ts）で使う（hikage・tonbo・fuda の tools/cdp.ts は同じもの）。
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -23,7 +23,10 @@ class Connection {
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
   private listeners = new Map<string, Set<Listener>>()
 
-  constructor(private ws: WebSocket) {
+  private ws: WebSocket
+
+  constructor(ws: WebSocket) {
+    this.ws = ws
     ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(String(ev.data))
       if (msg.id !== undefined) {
@@ -56,7 +59,15 @@ class Connection {
 
 /** 1つのタブ。send はそのタブ宛ての命令、run はタブの中で async 関数の本体を実行して戻り値を受け取る */
 export class Page {
-  constructor(private conn: Connection, readonly sessionId: string, readonly targetId: string) {}
+  private conn: Connection
+  readonly sessionId: string
+  readonly targetId: string
+
+  constructor(conn: Connection, sessionId: string, targetId: string) {
+    this.conn = conn
+    this.sessionId = sessionId
+    this.targetId = targetId
+  }
 
   send(method: string, params: object = {}) {
     return this.conn.send(method, params, this.sessionId)
@@ -90,12 +101,18 @@ export class Page {
 export type Viewport = { width: number; height: number; deviceScaleFactor?: number; mobile?: boolean; touch?: boolean }
 
 export class Browser {
-  private constructor(private conn: Connection, private stop: () => Promise<void>) {}
+  private conn: Connection
+  private stop: () => Promise<void>
+
+  private constructor(conn: Connection, stop: () => Promise<void>) {
+    this.conn = conn
+    this.stop = stop
+  }
 
   static async launch(port = 9333): Promise<Browser> {
     const exe = BROWSERS.find((p) => existsSync(p))
     if (!exe) throw new Error('Edge か Chrome が見つかりません')
-    const profile = mkdtempSync(join(tmpdir(), 'fuda-browser-'))
+    const profile = mkdtempSync(join(tmpdir(), 'cdp-browser-'))
     const args = [
       '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
       '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', '--disable-gpu',
@@ -104,7 +121,12 @@ export class Browser {
       'about:blank',
     ]
     // ブラウザが標準エラーに書いたことの最後の部分を取っておき、つながらなかったときに見せる
-    const child = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    // Windows は、互換性を調べる印（__COMPAT_LAYER=DetectorsAppHealth など）を付けて起動されたアプリの子にも、
+    // その印を環境変数で引き継ぐ。Edge は印を見ると、印を外した自分を起動し直し、最初のプロセスは終了コード 0 ですぐ終わる。
+    // 起動し直した本体はこちらから閉じられずに残り、ポートもふさいで次の起動を失敗させるので、初めから印を外して起動する
+    const env = { ...process.env }
+    delete env.__COMPAT_LAYER
+    const child = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
     let stderr = ''
     child.stderr!.on('data', (d: Buffer) => {
       stderr = (stderr + d.toString()).slice(-4000)
@@ -116,7 +138,7 @@ export class Browser {
     // ブラウザが途中で終わってしまったら、待たずにやめる
     let wsUrl = ''
     for (let i = 0; i < 300 && !wsUrl && exited === undefined; i++) {
-      wsUrl = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json()).then((j) => j.webSocketDebuggerUrl).catch(() => '')
+      wsUrl = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json() as Promise<{ webSocketDebuggerUrl: string }>).then((j) => j.webSocketDebuggerUrl).catch(() => '')
       if (!wsUrl) await sleep(200)
     }
     if (!wsUrl) {
